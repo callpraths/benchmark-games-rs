@@ -11,11 +11,13 @@
 // Will outlast current iteration.
 #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
 
+use std::alloc::{alloc, dealloc, Layout};
 use std::arch::x86_64::*;
+use std::io::Write;
 use std::mem;
 
-fn numDigits(mut n: u64) -> u64 {
-    let mut len: u64 = 0;
+fn numDigits(mut n: usize) -> usize {
+    let mut len: usize = 0;
     while n != 0 {
         n = n / 10;
         len += 1;
@@ -153,91 +155,124 @@ unsafe fn mand64(mut init_r: *mut __m128d, init_i: __m128d) -> u64 {
     return pix64;
 }
 
-fn main() {}
+fn main() {
+    unsafe {
+        // get width/height from arguments
+        let mut wid_ht: usize = 16000;
+        if !std::env::args().len() > 0 {
+            wid_ht = std::env::args().nth(1).unwrap().parse().unwrap();
+        }
+        wid_ht = (wid_ht + 7) & !(7 as usize);
 
-// This C-to-Rust conversion is WIP.
-// The remaining C program, commented out, follows.
-/*
+        // allocate memory for header and pixels
+        let headerLength = numDigits(wid_ht) * 2 + 5;
+        let pad = ((headerLength + 7) & !7) - headerLength; // pad aligns pixels on 8
+        let dataLength = headerLength + wid_ht * (wid_ht >> 3);
 
-int main(int argc, char ** argv)
-{
-    // get width/height from arguments
+        // The original C program implicitly depended on the fact that malloc()
+        // returns memory that is at least aligned to 8 bytes.
+        // https://stackoverflow.com/questions/8752546/how-does-malloc-understand-alignment
+        let buffer_layout = Layout::from_size_align(dataLength, 8).unwrap();
+        let raw_buffer = alloc(buffer_layout);
+        // We already .add(pad) so that header is offset to the start of our write area.
+        let header: *mut mem::MaybeUninit<u8> = mem::transmute(raw_buffer.add(pad));
+        let pixels = header.add(headerLength);
 
-    long wid_ht = 16000;
-    if (argc >= 2)
-    {
-        wid_ht = atoi(argv[1]);
-    }
-    wid_ht = (wid_ht+7) & ~7;
+        // generate the bitmap header
+        // The original C program directly used sprintf() in the header buffer.
+        // The String type in Rust is very particular about memory management,
+        // so it is not possible to transmute our fancily aligned buffer into a
+        // (MaybeUninit) String.
+        // Header generation is not the hottest part of this program, so let's
+        // move on.
+        let header_string = format!("P4\n{} {}\n", wid_ht, wid_ht);
+        // assert_eq!(header_string.as_bytes().len(), headerLength);
+        for (i, b) in header_string.as_bytes().iter().enumerate() {
+            (*header.add(i)).as_mut_ptr().write(*b);
+        }
 
+        // calculate initial values, store in r0, i0
+        // Note: r0/i0 below are _not_ identical to the original C program.
+        // The C program allocated dynamically sized arrays on the stack, which
+        // is impossible in Rust.
+        // A somewhat more Rusty way to do this would be to create a Vec and
+        // then work with Box<[T]> below, but I'm avoiding introducing Vec and
+        // Slice in this first transliteration.
+        let r0_layout = Layout::from_size_align(
+            mem::size_of::<__m128d>() * wid_ht / 2,
+            mem::align_of::<__m128d>(),
+        )
+        .unwrap();
+        let raw_r0 = alloc(r0_layout);
+        let r0: *mut mem::MaybeUninit<__m128d> = mem::transmute(raw_r0);
 
-    // allocate memory for header and pixels
+        let i0_layout =
+            Layout::from_size_align(mem::size_of::<f64>() * wid_ht, mem::align_of::<f64>())
+                .unwrap();
+        let raw_i0 = alloc(i0_layout);
+        let i0: *mut mem::MaybeUninit<f64> = mem::transmute(raw_i0);
 
-    long headerLength = numDigits(wid_ht)*2+5;
-    long pad = ((headerLength + 7) & ~7) - headerLength; // pad aligns pixels on 8
-    long dataLength = headerLength + wid_ht*(wid_ht>>3);
-    unsigned char * const buffer = malloc(pad + dataLength);
-    unsigned char * const header = buffer + pad;
-    unsigned char * const pixels = header + headerLength;
+        for xy in (0..wid_ht).step_by(2) {
+            (*r0.add(xy >> 1)).as_mut_ptr().write(_mm_sub_pd(
+                _mm_mul_pd(
+                    _mm_set_pd(xy as f64, (xy + 1) as f64),
+                    _mm_div_pd(_mm_set1_pd(2.0), _mm_set1_pd(wid_ht as f64)),
+                ),
+                _mm_set1_pd(1.5),
+            ));
+            (*i0.add(xy))
+                .as_mut_ptr()
+                .write(2.0 / (wid_ht * xy) as f64 - 1.0);
+            (*i0.add(xy + 1))
+                .as_mut_ptr()
+                .write(2.0 / (wid_ht * (xy + 1)) as f64 - 1.0);
+        }
 
+        // We're done initializing.
+        let r0: *mut __m128d = mem::transmute(r0);
+        let i0: *mut f64 = mem::transmute(i0);
 
-    // generate the bitmap header
+        // generate the bitmap
 
-    sprintf((char *)header, "P4\n%ld %ld\n", wid_ht, wid_ht);
-
-
-    // calculate initial values, store in r0, i0
-
-    __m128d r0[wid_ht/2];
-    double i0[wid_ht];
-
-    for(long xy=0; xy<wid_ht; xy+=2)
-    {
-        r0[xy>>1] = 2.0 / wid_ht * (__m128d){xy,  xy+1} - 1.5;
-        i0[xy]    = 2.0 / wid_ht *  xy    - 1.0;
-        i0[xy+1]  = 2.0 / wid_ht * (xy+1) - 1.0;
-    }
-
-
-    // generate the bitmap
-
-    long use8 = wid_ht%64;
-    if (use8)
-    {
-        // process 8 pixels (one byte) at a time
-        #pragma omp parallel for schedule(guided)
-        for(long y=0; y<wid_ht; y++)
-        {
-            __m128d init_i = (__m128d){i0[y], i0[y]};
-            long rowstart = y*wid_ht/8;
-            for(long x=0; x<wid_ht; x+=8)
-            {
-                pixels[rowstart + x/8] = mand8(r0+x/2, init_i);
+        let use8 = wid_ht % 64 != 0;
+        if use8 {
+            // process 8 pixels (one byte) at a time
+            // TODO: Parallelize. From the original program:
+            // #pragma omp parallel for schedule(guided)
+            for y in 0..wid_ht {
+                let init_i = _mm_set_pd(*i0.add(y), *i0.add(y));
+                let rowstart = y * wid_ht / 8;
+                for x in (0..wid_ht).step_by(8) {
+                    // The original C program depended on the behaviour that
+                    // casting an unsigned long to char preserves the last byte.
+                    // I'm more explicit here, cause I'm a noob.
+                    let vals: [u8; 8] = mem::transmute(mand8(r0.add(x / 2), init_i));
+                    (*pixels.add(rowstart + x / 8)).as_mut_ptr().write(vals[3]);
+                }
+            }
+        } else {
+            // process 64 pixels (8 bytes) at a time
+            // TODO: Parallelize. From the original program:
+            // #pragma omp parallel for schedule(guided)
+            for y in 0..wid_ht {
+                let init_i = _mm_set_pd(*i0.add(y), *i0.add(y));
+                let rowstart = y * wid_ht / 64;
+                for x in (0..wid_ht).step_by(64) {
+                    ((*pixels.add(rowstart + x / 64)).as_mut_ptr() as *mut u64)
+                        .write(mand64(r0.add(x / 2), init_i));
+                }
             }
         }
+
+        let buffer: *mut u8 = mem::transmute(header);
+
+        // write the data
+        std::io::stdout()
+            .write_all(std::slice::from_raw_parts(buffer, dataLength))
+            .unwrap();
+
+        dealloc(raw_i0, i0_layout);
+        dealloc(raw_r0, r0_layout);
+        dealloc(raw_buffer, buffer_layout);
     }
-    else
-    {
-        // process 64 pixels (8 bytes) at a time
-        #pragma omp parallel for schedule(guided)
-        for(long y=0; y<wid_ht; y++)
-        {
-            __m128d init_i = (__m128d){i0[y], i0[y]};
-            long rowstart = y*wid_ht/64;
-            for(long x=0; x<wid_ht; x+=64)
-            {
-                ((unsigned long *)pixels)[rowstart + x/64] = mand64(r0+x/2, init_i);
-            }
-        }
-    }
-
-    // write the data
-
-    long ret = ret = write(STDOUT_FILENO, header, dataLength);
-
-
-    free(buffer);
-
-    return 0;
 }
-*/
