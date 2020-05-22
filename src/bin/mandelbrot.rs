@@ -6,114 +6,158 @@
 // inspired by the C-to-Rust conversion described at
 // http://cliffle.com/p/dangerust/
 
-// This C-to-Rust conversion is WIP.
-// The original C program, commented out, follows.
-/*
+// Temporary
+#![allow(dead_code, unused_variables)]
+// Will outlast current iteration.
+#![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <emmintrin.h>
+use std::arch::x86_64::*;
+use std::mem;
 
-
-long numDigits(long n)
-{
-    long len = 0;
-    while(n)
-    {
-        n=n/10;
-        len++;
+fn numDigits(mut n: u64) -> u64 {
+    let mut len: u64 = 0;
+    while n != 0 {
+        n = n / 10;
+        len += 1;
     }
-    return len;
+    len
 }
 
-inline long vec_nle(__m128d *v, double f)
-{
-    return (v[0][0] <= f ||
-        v[0][1] <= f ||
-        v[1][0] <= f ||
-        v[1][1] <= f ||
-        v[2][0] <= f ||
-        v[2][1] <= f ||
-        v[3][0] <= f ||
-        v[3][1] <= f) ? 0 : -1;
-}
-
-inline void clrPixels_nle(__m128d *v, double f, unsigned long * pix8)
-{
-    if(!(v[0][0] <= f)) *pix8 &= 0x7f;
-    if(!(v[0][1] <= f)) *pix8 &= 0xbf;
-    if(!(v[1][0] <= f)) *pix8 &= 0xdf;
-    if(!(v[1][1] <= f)) *pix8 &= 0xef;
-    if(!(v[2][0] <= f)) *pix8 &= 0xf7;
-    if(!(v[2][1] <= f)) *pix8 &= 0xfb;
-    if(!(v[3][0] <= f)) *pix8 &= 0xfd;
-    if(!(v[3][1] <= f)) *pix8 &= 0xfe;
-}
-
-inline void calcSum(__m128d *r, __m128d *i, __m128d *sum, __m128d *init_r, __m128d init_i)
-{
-    for(long pair=0; pair<4; pair++)
+#[inline(always)]
+unsafe fn vec_nle(v: *mut __m128d, f: f64) -> i64 {
+    // TODO: https://github.com/searchivarius/BlogCode/blob/master/2014/5/14/mm_extract_pd.cpp
+    // is "more correct" and sometimes faster.
+    // TODO: Also see gcc option -mfpmath=sse which would lead to normal
+    // floating point operations also using SSE registers. This could lead to
+    // more efficient type punning.
+    // https://stackoverflow.com/questions/12624466/get-member-of-m128-by-index
+    if *(v.add(0) as *mut f64).add(0) <= f
+        || *(v.add(0) as *mut f64).add(1) <= f
+        || *(v.add(1) as *mut f64).add(0) <= f
+        || *(v.add(1) as *mut f64).add(1) <= f
+        || *(v.add(2) as *mut f64).add(0) <= f
+        || *(v.add(2) as *mut f64).add(1) <= f
+        || *(v.add(3) as *mut f64).add(0) <= f
+        || *(v.add(3) as *mut f64).add(1) <= f
     {
-        __m128d r2 = r[pair] * r[pair];
-        __m128d i2 = i[pair] * i[pair];
-        __m128d ri = r[pair] * i[pair];
-
-        sum[pair] = r2 + i2;
-
-        r[pair]=r2 - i2 + init_r[pair];
-        i[pair]=ri + ri + init_i;
+        0
+    } else {
+        -1
     }
 }
 
-inline unsigned long mand8(__m128d *init_r, __m128d init_i)
-{
-    __m128d r[4], i[4], sum[4];
-    for(long pair=0; pair<4; pair++)
-    {
-        r[pair]=init_r[pair];
-        i[pair]=init_i;
+#[inline(always)]
+unsafe fn clrPixels_nle(v: *mut __m128d, f: f64, pix8: *mut u64) {
+    if !(*(v.add(0) as *mut f64).add(0) <= f) {
+        *pix8 &= 0x7f
     }
+    if !(*(v.add(0) as *mut f64).add(1) <= f) {
+        *pix8 &= 0xbf
+    }
+    if !(*(v.add(1) as *mut f64).add(0) <= f) {
+        *pix8 &= 0xdf
+    }
+    if !(*(v.add(1) as *mut f64).add(1) <= f) {
+        *pix8 &= 0xef
+    }
+    if !(*(v.add(2) as *mut f64).add(0) <= f) {
+        *pix8 &= 0xf7
+    }
+    if !(*(v.add(2) as *mut f64).add(1) <= f) {
+        *pix8 &= 0xfb
+    }
+    if !(*(v.add(3) as *mut f64).add(0) <= f) {
+        *pix8 &= 0xfd
+    }
+    if !(*(v.add(3) as *mut f64).add(1) <= f) {
+        *pix8 &= 0xfe
+    }
+}
 
-    unsigned long pix8 = 0xff;
+#[inline(always)]
+unsafe fn calcSum(
+    r: *mut __m128d,
+    i: *mut __m128d,
+    sum: *mut mem::MaybeUninit<__m128d>,
+    init_r: *mut __m128d,
+    init_i: __m128d,
+) {
+    for pair in 0..4 {
+        let r2: __m128d = _mm_mul_pd(*r.add(pair), *r.add(pair));
+        let i2: __m128d = _mm_mul_pd(*i.add(pair), *i.add(pair));
+        let ri: __m128d = _mm_mul_pd(*r.add(pair), *i.add(pair));
+        (*sum.add(pair)).as_mut_ptr().write(_mm_add_pd(r2, i2));
+        *r.add(pair) = _mm_add_pd(_mm_sub_pd(r2, i2), *init_r.add(pair));
+        *i.add(pair) = _mm_add_pd(_mm_add_pd(ri, ri), init_i);
+    }
+}
 
-    for (long j = 0; j < 6; j++)
-    {
-        for(long k=0; k<8; k++)
-            calcSum(r, i, sum, init_r, init_i);
+#[inline(always)]
+unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
+    let mut r = [mem::MaybeUninit::<__m128d>::uninit(); 4];
+    let mut i = [mem::MaybeUninit::<__m128d>::uninit(); 4];
+    let mut sum = [mem::MaybeUninit::<__m128d>::uninit(); 4];
+    for pair in 0..4 {
+        r[pair].as_mut_ptr().write(*init_r.add(pair));
+        i[pair].as_mut_ptr().write(init_i);
+    }
+    let mut r: [__m128d; 4] = mem::transmute(r);
+    let mut i: [__m128d; 4] = mem::transmute(i);
 
-        if (vec_nle(sum, 4.0))
-        {
+    let mut pix8: u64 = 0xff;
+    for j in 0..6 {
+        for k in 0..8 {
+            calcSum(
+                r.as_mut_ptr(),
+                i.as_mut_ptr(),
+                sum.as_mut_ptr(),
+                init_r,
+                init_i,
+            );
+        }
+        if vec_nle(sum.as_mut_ptr() as *mut __m128d, 4.0) != 0 {
             pix8 = 0x00;
             break;
         }
     }
-    if (pix8)
-    {
-        calcSum(r, i, sum, init_r, init_i);
-        calcSum(r, i, sum, init_r, init_i);
-        clrPixels_nle(sum, 4.0, &pix8);
+    if pix8 != 0 {
+        calcSum(
+            r.as_mut_ptr(),
+            i.as_mut_ptr(),
+            sum.as_mut_ptr(),
+            init_r,
+            init_i,
+        );
+        calcSum(
+            r.as_mut_ptr(),
+            i.as_mut_ptr(),
+            sum.as_mut_ptr(),
+            init_r,
+            init_i,
+        );
+        clrPixels_nle(sum.as_mut_ptr() as *mut __m128d, 4.0, &mut pix8);
     }
-
     return pix8;
 }
 
-unsigned long mand64(__m128d *init_r, __m128d init_i)
-{
-    unsigned long pix64 = 0;
+unsafe fn mand64(mut init_r: *mut __m128d, init_i: __m128d) -> u64 {
+    let mut pix64: u64 = 0;
 
-    for(long byte=0; byte<8; byte++)
-    {
-        unsigned long pix8 = mand8(init_r, init_i);
+    for byte in 0..8 {
+        let pix8 = mand8(init_r, init_i);
 
         pix64 = (pix64 >> 8) | (pix8 << 56);
-        init_r += 4;
+        init_r = init_r.add(4);
     }
 
     return pix64;
 }
 
+fn main() {}
 
+// This C-to-Rust conversion is WIP.
+// The remaining C program, commented out, follows.
+/*
 
 int main(int argc, char ** argv)
 {
@@ -197,5 +241,3 @@ int main(int argc, char ** argv)
     return 0;
 }
 */
-
-fn main() {}
