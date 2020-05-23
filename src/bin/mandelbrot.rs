@@ -26,36 +26,33 @@ fn numDigits(mut n: usize) -> usize {
 }
 
 #[inline(always)]
-unsafe fn _mm_extract_lower(v: __m128d) -> f64 {
-    _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00000))
+#[cfg(target_feature = "sse2")]
+fn _mm_extract_lower(v: __m128d) -> f64 {
+    // Safety: Only compiled when the target supports SSE2 instructions.
+    unsafe { _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00000)) }
 }
 
 #[inline(always)]
-unsafe fn _mm_extract_upper(v: __m128d) -> f64 {
-    _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00001))
+#[cfg(target_feature = "sse2")]
+fn _mm_extract_upper(v: __m128d) -> f64 {
+    // Safety: Only compiled when the target supports SSE2 instructions.
+    unsafe { _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00001)) }
 }
 
 #[inline(always)]
-unsafe fn vec_nle(v: *mut __m128d, f: f64) -> i64 {
+fn vec_nle(v: std::slice::Iter<__m128d>, f: f64) -> bool {
     // https://github.com/searchivarius/BlogCode/blob/master/2014/5/14/mm_extract_pd.cpp
     // is "more correct" and sometimes faster.
     // TODO: Also see gcc option -mfpmath=sse which would lead to normal
     // floating point operations also using SSE registers. This could lead to
     // more efficient type punning.
     // https://stackoverflow.com/questions/12624466/get-member-of-m128-by-index
-    if _mm_extract_lower(*v.add(0)) <= f
-        || _mm_extract_upper(*v.add(0)) <= f
-        || _mm_extract_lower(*v.add(1)) <= f
-        || _mm_extract_upper(*v.add(1)) <= f
-        || _mm_extract_lower(*v.add(2)) <= f
-        || _mm_extract_upper(*v.add(2)) <= f
-        || _mm_extract_lower(*v.add(3)) <= f
-        || _mm_extract_upper(*v.add(3)) <= f
-    {
-        0
-    } else {
-        -1
+    for i in v.take(4) {
+        if _mm_extract_lower(*i) <= f || _mm_extract_upper(*i) <= f {
+            return false;
+        }
     }
+    return true;
 }
 
 #[inline(always)]
@@ -128,7 +125,8 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
             );
         }
 
-        if vec_nle(sum.as_mut_ptr() as *mut __m128d, 4.0) != 0 {
+        let sum_inited: [__m128d; 4] = mem::transmute(sum);
+        if vec_nle(sum_inited.iter(), 4.0) {
             pix8 = 0x00;
             break;
         }
