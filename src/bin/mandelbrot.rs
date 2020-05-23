@@ -26,21 +26,31 @@ fn numDigits(mut n: usize) -> usize {
 }
 
 #[inline(always)]
+unsafe fn _mm_extract_lower(v: __m128d) -> f64 {
+    _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00000))
+}
+
+#[inline(always)]
+unsafe fn _mm_extract_upper(v: __m128d) -> f64 {
+    _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00001))
+}
+
+#[inline(always)]
 unsafe fn vec_nle(v: *mut __m128d, f: f64) -> i64 {
-    // TODO: https://github.com/searchivarius/BlogCode/blob/master/2014/5/14/mm_extract_pd.cpp
+    // https://github.com/searchivarius/BlogCode/blob/master/2014/5/14/mm_extract_pd.cpp
     // is "more correct" and sometimes faster.
     // TODO: Also see gcc option -mfpmath=sse which would lead to normal
     // floating point operations also using SSE registers. This could lead to
     // more efficient type punning.
     // https://stackoverflow.com/questions/12624466/get-member-of-m128-by-index
-    if *(v.add(0) as *mut f64).add(0) <= f
-        || *(v.add(0) as *mut f64).add(1) <= f
-        || *(v.add(1) as *mut f64).add(0) <= f
-        || *(v.add(1) as *mut f64).add(1) <= f
-        || *(v.add(2) as *mut f64).add(0) <= f
-        || *(v.add(2) as *mut f64).add(1) <= f
-        || *(v.add(3) as *mut f64).add(0) <= f
-        || *(v.add(3) as *mut f64).add(1) <= f
+    if _mm_extract_lower(*v.add(0)) <= f
+        || _mm_extract_upper(*v.add(0)) <= f
+        || _mm_extract_lower(*v.add(1)) <= f
+        || _mm_extract_upper(*v.add(1)) <= f
+        || _mm_extract_lower(*v.add(2)) <= f
+        || _mm_extract_upper(*v.add(2)) <= f
+        || _mm_extract_lower(*v.add(3)) <= f
+        || _mm_extract_upper(*v.add(3)) <= f
     {
         0
     } else {
@@ -50,28 +60,28 @@ unsafe fn vec_nle(v: *mut __m128d, f: f64) -> i64 {
 
 #[inline(always)]
 unsafe fn clrPixels_nle(v: *mut __m128d, f: f64, pix8: *mut u64) {
-    if !(*(v.add(0) as *mut f64).add(0) <= f) {
+    if !(_mm_extract_lower(*v.add(0)) <= f) {
         *pix8 &= 0b0111_1111; // 0x7f
     }
-    if !(*(v.add(0) as *mut f64).add(1) <= f) {
+    if !(_mm_extract_upper(*v.add(0)) <= f) {
         *pix8 &= 0b1011_1111; // 0xbf
     }
-    if !(*(v.add(1) as *mut f64).add(0) <= f) {
+    if !(_mm_extract_lower(*v.add(1)) <= f) {
         *pix8 &= 0b1101_1111; // 0xdf
     }
-    if !(*(v.add(1) as *mut f64).add(1) <= f) {
+    if !(_mm_extract_upper(*v.add(1)) <= f) {
         *pix8 &= 0b1110_1111; // 0xef
     }
-    if !(*(v.add(2) as *mut f64).add(0) <= f) {
+    if !(_mm_extract_lower(*v.add(2)) <= f) {
         *pix8 &= 0b1111_0111; // 0xf7
     }
-    if !(*(v.add(2) as *mut f64).add(1) <= f) {
+    if !(_mm_extract_upper(*v.add(2)) <= f) {
         *pix8 &= 0b1111_1011; // 0xfb
     }
-    if !(*(v.add(3) as *mut f64).add(0) <= f) {
+    if !(_mm_extract_lower(*v.add(3)) <= f) {
         *pix8 &= 0b1111_1101; // 0xfd
     }
-    if !(*(v.add(3) as *mut f64).add(1) <= f) {
+    if !(_mm_extract_upper(*v.add(3)) <= f) {
         *pix8 &= 0b1111_1110; // 0xfe
     }
 }
@@ -117,6 +127,7 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
                 init_i,
             );
         }
+
         if vec_nle(sum.as_mut_ptr() as *mut __m128d, 4.0) != 0 {
             pix8 = 0x00;
             break;
