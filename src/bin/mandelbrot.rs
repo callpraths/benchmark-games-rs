@@ -242,12 +242,13 @@ fn main() {
             for y in 0..wid_ht {
                 let init_i = _mm_set_pd(*i0.add(y), *i0.add(y));
                 let rowstart = y * wid_ht / 8;
+                // Casting u64 to u8 works out in this case, but is clearly
+                // yucky.
+                // https://doc.rust-lang.org/reference/expressions/operator-expr.html#semantics
                 for x in (0..wid_ht).step_by(8) {
-                    // The original C program depended on the behaviour that
-                    // casting an unsigned long to char preserves the last byte.
-                    // I'm more explicit here, cause I'm a noob.
-                    let vals: [u8; 8] = mem::transmute(mand8(r0.add(x / 2), init_i));
-                    (*pixels.add(rowstart + x / 8)).as_mut_ptr().write(vals[3]);
+                    (*pixels.add(rowstart + x / 8))
+                        .as_mut_ptr()
+                        .write(mand8(r0.add(x / 2), init_i) as u8);
                 }
             }
         } else {
