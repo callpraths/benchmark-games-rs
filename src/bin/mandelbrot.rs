@@ -47,7 +47,7 @@ fn vec_nle(v: std::slice::Iter<__m128d>, f: f64) -> bool {
     // floating point operations also using SSE registers. This could lead to
     // more efficient type punning.
     // https://stackoverflow.com/questions/12624466/get-member-of-m128-by-index
-    for i in v.take(4) {
+    for i in v {
         if _mm_extract_lower(*i) <= f || _mm_extract_upper(*i) <= f {
             return false;
         }
