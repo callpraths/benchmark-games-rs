@@ -51,28 +51,28 @@ unsafe fn vec_nle(v: *mut __m128d, f: f64) -> i64 {
 #[inline(always)]
 unsafe fn clrPixels_nle(v: *mut __m128d, f: f64, pix8: *mut u64) {
     if !(*(v.add(0) as *mut f64).add(0) <= f) {
-        *pix8 &= 0x7f
+        *pix8 &= 0b0111_1111; // 0x7f
     }
     if !(*(v.add(0) as *mut f64).add(1) <= f) {
-        *pix8 &= 0xbf
+        *pix8 &= 0b1011_1111; // 0xbf
     }
     if !(*(v.add(1) as *mut f64).add(0) <= f) {
-        *pix8 &= 0xdf
+        *pix8 &= 0b1101_1111; // 0xdf
     }
     if !(*(v.add(1) as *mut f64).add(1) <= f) {
-        *pix8 &= 0xef
+        *pix8 &= 0b1110_1111; // 0xef
     }
     if !(*(v.add(2) as *mut f64).add(0) <= f) {
-        *pix8 &= 0xf7
+        *pix8 &= 0b1111_0111; // 0xf7
     }
     if !(*(v.add(2) as *mut f64).add(1) <= f) {
-        *pix8 &= 0xfb
+        *pix8 &= 0b1111_1011; // 0xfb
     }
     if !(*(v.add(3) as *mut f64).add(0) <= f) {
-        *pix8 &= 0xfd
+        *pix8 &= 0b1111_1101; // 0xfd
     }
     if !(*(v.add(3) as *mut f64).add(1) <= f) {
-        *pix8 &= 0xfe
+        *pix8 &= 0b1111_1110; // 0xfe
     }
 }
 
