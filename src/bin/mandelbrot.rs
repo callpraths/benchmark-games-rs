@@ -222,10 +222,10 @@ fn main() {
             ));
             (*i0.add(xy))
                 .as_mut_ptr()
-                .write(2.0 / (wid_ht * xy) as f64 - 1.0);
+                .write((2.0 / wid_ht as f64) * xy as f64 - 1.0);
             (*i0.add(xy + 1))
                 .as_mut_ptr()
-                .write(2.0 / (wid_ht * (xy + 1)) as f64 - 1.0);
+                .write((2.0 / wid_ht as f64) * (xy + 1) as f64 - 1.0);
         }
 
         // We're done initializing.
