@@ -23,16 +23,32 @@ mandelbrot-bench: $(CARGO_OUT)/mandelbrot $(ORIGINALS_OUT)/mandelbrot.gcc-run
 		'$(ORIGINALS_OUT)/mandelbrot.gcc-run 16000' \
 		'$(CARGO_OUT)/mandelbrot 16000'
 
+# Do not mark .PHONY because we want this to run each time
+mandelbrot-seq-bench: $(CARGO_OUT)/mandelbrot \
+		$(ORIGINALS_OUT)/mandelbrot.gcc-seq-run
+	@echo "Running mandelbrot sequential impl benchmarks..."
+	hyperfine \
+		'$(ORIGINALS_OUT)/mandelbrot.gcc-seq-run 16000' \
+		'$(CARGO_OUT)/mandelbrot 16000'
+
 $(CARGO_OUT)/mandelbrot: $(CARGO_SRC)/mandelbrot.rs
 	cargo build --bin mandelbrot --release
 
 .PHONY: build-all build-rust
 
-build-all: $(ORIGINALS_OUT)/mandelbrot.gcc-run build-rust
+build-all: $(ORIGINALS_OUT)/mandelbrot.gcc-run \
+		$(ORIGINALS_OUT)/mandelbrot.gcc-seq-run \
+		build-rust
 
 $(ORIGINALS_OUT)/mandelbrot.gcc-run: ${ORIGINALS}/mandelbrot.c $(ORIGINALS_OUT)
 	gcc -pipe -Wall -O3 -fomit-frame-pointer -march=core2 \
 		-mno-fma -fno-finite-math-only -fopenmp $< \
+		-o $@
+
+$(ORIGINALS_OUT)/mandelbrot.gcc-seq-run: ${ORIGINALS}/mandelbrot.c \
+		$(ORIGINALS_OUT)
+	gcc -pipe -Wall -O3 -fomit-frame-pointer -march=core2 \
+		-mno-fma -fno-finite-math-only $< \
 		-o $@
 
 $(ORIGINALS_OUT):
