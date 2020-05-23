@@ -215,7 +215,10 @@ fn main() {
         for xy in (0..wid_ht).step_by(2) {
             (*r0.add(xy >> 1)).as_mut_ptr().write(_mm_sub_pd(
                 _mm_mul_pd(
-                    _mm_set_pd(xy as f64, (xy + 1) as f64),
+                    // NB: _mm_set_pd() reverses the order of arguments when packing
+                    // f64 into a __m128d.
+                    // https://stackoverflow.com/questions/5237961/why-does-does-sse-set-mm-set-ps-reverse-the-order-of-arguments
+                    _mm_set_pd((xy + 1) as f64, xy as f64),
                     _mm_div_pd(_mm_set1_pd(2.0), _mm_set1_pd(wid_ht as f64)),
                 ),
                 _mm_set1_pd(1.5),
