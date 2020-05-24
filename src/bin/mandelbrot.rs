@@ -92,27 +92,27 @@ fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u64) {
 
 #[inline(always)]
 unsafe fn calcSum(
-    r: *mut __m128d,
-    i: *mut __m128d,
-    sum: *mut __m128d,
-    init_r: *mut __m128d,
+    r: &mut [__m128d; 4],
+    i: &mut [__m128d; 4],
+    sum: &mut [__m128d; 4],
+    init_r: *const __m128d,
     init_i: __m128d,
 ) {
-    for pair in 0..4 {
-        let r2: __m128d = _mm_mul_pd(*r.add(pair), *r.add(pair));
-        let i2: __m128d = _mm_mul_pd(*i.add(pair), *i.add(pair));
-        let ri: __m128d = _mm_mul_pd(*r.add(pair), *i.add(pair));
-        *sum.add(pair) = _mm_add_pd(r2, i2);
-        *r.add(pair) = _mm_add_pd(_mm_sub_pd(r2, i2), *init_r.add(pair));
-        *i.add(pair) = _mm_add_pd(_mm_add_pd(ri, ri), init_i);
+    for idx in 0..4 {
+        let r2: __m128d = _mm_mul_pd(r[idx], r[idx]);
+        let i2: __m128d = _mm_mul_pd(i[idx], i[idx]);
+        let ri: __m128d = _mm_mul_pd(r[idx], i[idx]);
+        sum[idx] = _mm_add_pd(r2, i2);
+        r[idx] = _mm_add_pd(_mm_sub_pd(r2, i2), *init_r.add(idx));
+        i[idx] = _mm_add_pd(_mm_add_pd(ri, ri), init_i);
     }
 }
 
 #[inline(always)]
 unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
+    let zero = _mm_set1_pd(0.0);
     let mut r = [mem::MaybeUninit::<__m128d>::uninit(); 4];
     let mut i = [mem::MaybeUninit::<__m128d>::uninit(); 4];
-    let zero = _mm_set1_pd(0.0);
     let mut sum = [zero; 4];
     for pair in 0..4 {
         r[pair].as_mut_ptr().write(*init_r.add(pair));
@@ -124,13 +124,7 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
     let mut pix8: u64 = 0xff;
     for j in 0..6 {
         for k in 0..8 {
-            calcSum(
-                r.as_mut_ptr(),
-                i.as_mut_ptr(),
-                sum.as_mut_ptr(),
-                init_r,
-                init_i,
-            );
+            calcSum(&mut r, &mut i, &mut sum, init_r, init_i);
         }
 
         if vec_nle(&sum, 4.0) {
@@ -139,20 +133,8 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
         }
     }
     if pix8 != 0 {
-        calcSum(
-            r.as_mut_ptr(),
-            i.as_mut_ptr(),
-            sum.as_mut_ptr(),
-            init_r,
-            init_i,
-        );
-        calcSum(
-            r.as_mut_ptr(),
-            i.as_mut_ptr(),
-            sum.as_mut_ptr(),
-            init_r,
-            init_i,
-        );
+        calcSum(&mut r, &mut i, &mut sum, init_r, init_i);
+        calcSum(&mut r, &mut i, &mut sum, init_r, init_i);
         clrPixels_nle(&sum, 4.0, &mut pix8);
     }
     return pix8;
