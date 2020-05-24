@@ -94,7 +94,7 @@ fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u64) {
 unsafe fn calcSum(
     r: *mut __m128d,
     i: *mut __m128d,
-    sum: *mut mem::MaybeUninit<__m128d>,
+    sum: *mut __m128d,
     init_r: *mut __m128d,
     init_i: __m128d,
 ) {
@@ -102,7 +102,7 @@ unsafe fn calcSum(
         let r2: __m128d = _mm_mul_pd(*r.add(pair), *r.add(pair));
         let i2: __m128d = _mm_mul_pd(*i.add(pair), *i.add(pair));
         let ri: __m128d = _mm_mul_pd(*r.add(pair), *i.add(pair));
-        (*sum.add(pair)).as_mut_ptr().write(_mm_add_pd(r2, i2));
+        *sum.add(pair) = _mm_add_pd(r2, i2);
         *r.add(pair) = _mm_add_pd(_mm_sub_pd(r2, i2), *init_r.add(pair));
         *i.add(pair) = _mm_add_pd(_mm_add_pd(ri, ri), init_i);
     }
@@ -113,7 +113,7 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
     let mut r = [mem::MaybeUninit::<__m128d>::uninit(); 4];
     let mut i = [mem::MaybeUninit::<__m128d>::uninit(); 4];
     let zero = _mm_set1_pd(0.0);
-    let mut sum = [mem::MaybeUninit::<__m128d>::new(zero); 4];
+    let mut sum = [zero; 4];
     for pair in 0..4 {
         r[pair].as_mut_ptr().write(*init_r.add(pair));
         i[pair].as_mut_ptr().write(init_i);
@@ -133,7 +133,7 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
             );
         }
 
-        if vec_nle(&mem::transmute(sum), 4.0) {
+        if vec_nle(&sum, 4.0) {
             pix8 = 0x00;
             break;
         }
@@ -153,7 +153,7 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
             init_r,
             init_i,
         );
-        clrPixels_nle(&mem::transmute(sum), 4.0, &mut pix8);
+        clrPixels_nle(&sum, 4.0, &mut pix8);
     }
     return pix8;
 }
