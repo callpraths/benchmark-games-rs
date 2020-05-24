@@ -63,29 +63,29 @@ fn vec_nle(v: &[__m128d; 4], f: f64) -> bool {
 }
 
 #[inline(always)]
-unsafe fn clrPixels_nle(v: *mut __m128d, f: f64, pix8: *mut u64) {
-    if !(_mm_extract_lower(*v.add(0)) <= f) {
+fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u64) {
+    if !(_mm_extract_lower(v[0]) <= f) {
         *pix8 &= 0b0111_1111; // 0x7f
     }
-    if !(_mm_extract_upper(*v.add(0)) <= f) {
+    if !(_mm_extract_upper(v[0]) <= f) {
         *pix8 &= 0b1011_1111; // 0xbf
     }
-    if !(_mm_extract_lower(*v.add(1)) <= f) {
+    if !(_mm_extract_lower(v[1]) <= f) {
         *pix8 &= 0b1101_1111; // 0xdf
     }
-    if !(_mm_extract_upper(*v.add(1)) <= f) {
+    if !(_mm_extract_upper(v[1]) <= f) {
         *pix8 &= 0b1110_1111; // 0xef
     }
-    if !(_mm_extract_lower(*v.add(2)) <= f) {
+    if !(_mm_extract_lower(v[2]) <= f) {
         *pix8 &= 0b1111_0111; // 0xf7
     }
-    if !(_mm_extract_upper(*v.add(2)) <= f) {
+    if !(_mm_extract_upper(v[2]) <= f) {
         *pix8 &= 0b1111_1011; // 0xfb
     }
-    if !(_mm_extract_lower(*v.add(3)) <= f) {
+    if !(_mm_extract_lower(v[3]) <= f) {
         *pix8 &= 0b1111_1101; // 0xfd
     }
-    if !(_mm_extract_upper(*v.add(3)) <= f) {
+    if !(_mm_extract_upper(v[3]) <= f) {
         *pix8 &= 0b1111_1110; // 0xfe
     }
 }
@@ -152,7 +152,7 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
             init_r,
             init_i,
         );
-        clrPixels_nle(sum.as_mut_ptr() as *mut __m128d, 4.0, &mut pix8);
+        clrPixels_nle(&mem::transmute(sum), 4.0, &mut pix8);
     }
     return pix8;
 }
