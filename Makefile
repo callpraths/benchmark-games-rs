@@ -31,6 +31,12 @@ mandelbrot-seq-bench: $(CARGO_OUT)/mandelbrot \
 		'$(ORIGINALS_OUT)/mandelbrot.gcc-seq-run 16000' \
 		'$(CARGO_OUT)/mandelbrot 16000'
 
+# Do not mark .PHONY because we want this to run each time
+mandelbrot-only-bench: $(CARGO_OUT)/mandelbrot mandelbrot-diff
+	@echo "Running mandelbrot rust impl benchmark..."
+	hyperfine \
+		'$(CARGO_OUT)/mandelbrot 16000'
+
 $(CARGO_OUT)/mandelbrot: $(CARGO_SRC)/mandelbrot.rs
 	cargo build --bin mandelbrot --release
 

@@ -40,19 +40,26 @@ fn _mm_extract_upper(v: __m128d) -> f64 {
 }
 
 #[inline(always)]
-fn vec_nle(v: std::slice::Iter<__m128d>, f: f64) -> bool {
+fn vec_nle(v: &[__m128d; 4], f: f64) -> bool {
     // https://github.com/searchivarius/BlogCode/blob/master/2014/5/14/mm_extract_pd.cpp
-    // is "more correct" and sometimes faster.
+    // is "more correct" and sometimes faster than the original C programs
+    // indexing of f64 values within an __m128d.
+
     // TODO: Also see gcc option -mfpmath=sse which would lead to normal
     // floating point operations also using SSE registers. This could lead to
     // more efficient type punning.
     // https://stackoverflow.com/questions/12624466/get-member-of-m128-by-index
-    for i in v {
-        if _mm_extract_lower(*i) <= f || _mm_extract_upper(*i) <= f {
-            return false;
-        }
-    }
-    return true;
+
+    // Rust compiler had trouble unrolling loop here, which led to a noticeable
+    // performance hit, so unroll manually.
+    _mm_extract_lower(v[0]) > f
+        && _mm_extract_upper(v[0]) > f
+        && _mm_extract_lower(v[1]) > f
+        && _mm_extract_upper(v[1]) > f
+        && _mm_extract_lower(v[2]) > f
+        && _mm_extract_upper(v[2]) > f
+        && _mm_extract_lower(v[3]) > f
+        && _mm_extract_upper(v[3]) > f
 }
 
 #[inline(always)]
@@ -125,8 +132,7 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
             );
         }
 
-        let sum_inited: [__m128d; 4] = mem::transmute(sum);
-        if vec_nle(sum_inited.iter(), 4.0) {
+        if vec_nle(&mem::transmute(sum), 4.0) {
             pix8 = 0x00;
             break;
         }
