@@ -112,7 +112,8 @@ unsafe fn calcSum(
 unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
     let mut r = [mem::MaybeUninit::<__m128d>::uninit(); 4];
     let mut i = [mem::MaybeUninit::<__m128d>::uninit(); 4];
-    let mut sum = [mem::MaybeUninit::<__m128d>::uninit(); 4];
+    let zero = _mm_set1_pd(0.0);
+    let mut sum = [mem::MaybeUninit::<__m128d>::new(zero); 4];
     for pair in 0..4 {
         r[pair].as_mut_ptr().write(*init_r.add(pair));
         i[pair].as_mut_ptr().write(init_i);
