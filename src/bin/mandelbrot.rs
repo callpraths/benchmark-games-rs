@@ -91,31 +91,45 @@ fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u64) {
 }
 
 #[inline(always)]
-unsafe fn calcSum(
+#[cfg(target_feature = "sse2")]
+fn calcSum(
     r: &mut [__m128d; 4],
     i: &mut [__m128d; 4],
     sum: &mut [__m128d; 4],
-    init_r: *const __m128d,
+    init_r: &[__m128d; 4],
     init_i: __m128d,
 ) {
     for idx in 0..4 {
-        let r2: __m128d = _mm_mul_pd(r[idx], r[idx]);
-        let i2: __m128d = _mm_mul_pd(i[idx], i[idx]);
-        let ri: __m128d = _mm_mul_pd(r[idx], i[idx]);
-        sum[idx] = _mm_add_pd(r2, i2);
-        r[idx] = _mm_add_pd(_mm_sub_pd(r2, i2), *init_r.add(idx));
-        i[idx] = _mm_add_pd(_mm_add_pd(ri, ri), init_i);
+        // Create local variables to avoid overly broad unsafe blocks.
+        let cur_r = r[idx];
+        let cur_i = i[idx];
+        let cur_init_r = init_r[idx];
+        // Safety: Only compiled when the target supports SSE2 instructions.
+        // So all _mm_* functions are safe.
+        let r2: __m128d = unsafe { _mm_mul_pd(cur_r, cur_r) };
+        let i2: __m128d = unsafe { _mm_mul_pd(cur_i, cur_i) };
+        let ri: __m128d = unsafe { _mm_mul_pd(cur_r, cur_i) };
+        sum[idx] = unsafe { _mm_add_pd(r2, i2) };
+        r[idx] = unsafe { _mm_add_pd(_mm_sub_pd(r2, i2), cur_init_r) };
+        i[idx] = unsafe { _mm_add_pd(_mm_add_pd(ri, ri), init_i) };
     }
 }
 
 #[inline(always)]
 unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
+    // This copy causes a small performance regression.
+    let init_r = [
+        *init_r.add(0),
+        *init_r.add(1),
+        *init_r.add(2),
+        *init_r.add(3),
+    ];
     let zero = _mm_set1_pd(0.0);
     let mut r = [mem::MaybeUninit::<__m128d>::uninit(); 4];
     let mut i = [mem::MaybeUninit::<__m128d>::uninit(); 4];
     let mut sum = [zero; 4];
     for pair in 0..4 {
-        r[pair].as_mut_ptr().write(*init_r.add(pair));
+        r[pair].as_mut_ptr().write(init_r[pair]);
         i[pair].as_mut_ptr().write(init_i);
     }
     let mut r: [__m128d; 4] = mem::transmute(r);
@@ -124,7 +138,7 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
     let mut pix8: u64 = 0xff;
     for j in 0..6 {
         for k in 0..8 {
-            calcSum(&mut r, &mut i, &mut sum, init_r, init_i);
+            calcSum(&mut r, &mut i, &mut sum, &init_r, init_i);
         }
 
         if vec_nle(&sum, 4.0) {
@@ -133,8 +147,8 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
         }
     }
     if pix8 != 0 {
-        calcSum(&mut r, &mut i, &mut sum, init_r, init_i);
-        calcSum(&mut r, &mut i, &mut sum, init_r, init_i);
+        calcSum(&mut r, &mut i, &mut sum, &init_r, init_i);
+        calcSum(&mut r, &mut i, &mut sum, &init_r, init_i);
         clrPixels_nle(&sum, 4.0, &mut pix8);
     }
     return pix8;
