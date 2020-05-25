@@ -116,24 +116,14 @@ fn calcSum(
 }
 
 #[inline(always)]
-unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
-    // This copy causes a small performance regression.
-    let init_r = [
-        *init_r.add(0),
-        *init_r.add(1),
-        *init_r.add(2),
-        *init_r.add(3),
-    ];
-    let zero = _mm_set1_pd(0.0);
-    let mut r = [mem::MaybeUninit::<__m128d>::uninit(); 4];
-    let mut i = [mem::MaybeUninit::<__m128d>::uninit(); 4];
+#[cfg(target_feature = "sse2")]
+fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u64 {
+    let mut r = *init_r;
+    let mut i = [init_i, init_i, init_i, init_i];
+    // Safety: Only compiled when the target supports SSE2 instructions.
+    // So all _mm_* functions are safe.
+    let zero = unsafe { _mm_set1_pd(0.0) };
     let mut sum = [zero; 4];
-    for pair in 0..4 {
-        r[pair].as_mut_ptr().write(init_r[pair]);
-        i[pair].as_mut_ptr().write(init_i);
-    }
-    let mut r: [__m128d; 4] = mem::transmute(r);
-    let mut i: [__m128d; 4] = mem::transmute(i);
 
     let mut pix8: u64 = 0xff;
     for j in 0..6 {
@@ -154,14 +144,13 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
     return pix8;
 }
 
-unsafe fn mand64(mut init_r: *mut __m128d, init_i: __m128d) -> u64 {
+fn mand64(init_r: &[[__m128d; 4]; 8], init_i: __m128d) -> u64 {
     let mut pix64: u64 = 0;
 
-    for _ in 0..8 {
-        let pix8 = mand8(init_r, init_i);
+    for init_r in init_r {
+        let pix8 = mand8(&init_r, init_i);
 
         pix64 = (pix64 >> 8) | (pix8 << 56);
-        init_r = init_r.add(4);
     }
     return pix64;
 }
@@ -260,9 +249,17 @@ fn main() {
                 // yucky.
                 // https://doc.rust-lang.org/reference/expressions/operator-expr.html#semantics
                 for x in (0..wid_ht).step_by(8) {
+                    // This copy causes a small performance regression.
+                    let init_r = [
+                        *r0.add(x / 2),
+                        *r0.add(x / 2 + 1),
+                        *r0.add(x / 2 + 2),
+                        *r0.add(x / 2 + 3),
+                    ];
+
                     (*pixels.add(rowstart + x / 8))
                         .as_mut_ptr()
-                        .write(mand8(r0.add(x / 2), init_i) as u8);
+                        .write(mand8(&init_r, init_i) as u8);
                 }
             }
         } else {
@@ -273,8 +270,59 @@ fn main() {
                 let init_i = _mm_set_pd(*i0.add(y), *i0.add(y));
                 let rowstart = y * wid_ht / 8;
                 for x in (0..wid_ht).step_by(64) {
+                    // This copy causes a small performance regression.
+                    let init_r = [
+                        [
+                            *r0.add(x / 2),
+                            *r0.add(x / 2 + 1),
+                            *r0.add(x / 2 + 2),
+                            *r0.add(x / 2 + 3),
+                        ],
+                        [
+                            *r0.add(x / 2 + 4),
+                            *r0.add(x / 2 + 5),
+                            *r0.add(x / 2 + 6),
+                            *r0.add(x / 2 + 7),
+                        ],
+                        [
+                            *r0.add(x / 2 + 8),
+                            *r0.add(x / 2 + 9),
+                            *r0.add(x / 2 + 10),
+                            *r0.add(x / 2 + 11),
+                        ],
+                        [
+                            *r0.add(x / 2 + 12),
+                            *r0.add(x / 2 + 13),
+                            *r0.add(x / 2 + 14),
+                            *r0.add(x / 2 + 15),
+                        ],
+                        [
+                            *r0.add(x / 2 + 16),
+                            *r0.add(x / 2 + 17),
+                            *r0.add(x / 2 + 18),
+                            *r0.add(x / 2 + 19),
+                        ],
+                        [
+                            *r0.add(x / 2 + 20),
+                            *r0.add(x / 2 + 21),
+                            *r0.add(x / 2 + 22),
+                            *r0.add(x / 2 + 23),
+                        ],
+                        [
+                            *r0.add(x / 2 + 24),
+                            *r0.add(x / 2 + 25),
+                            *r0.add(x / 2 + 26),
+                            *r0.add(x / 2 + 27),
+                        ],
+                        [
+                            *r0.add(x / 2 + 28),
+                            *r0.add(x / 2 + 29),
+                            *r0.add(x / 2 + 30),
+                            *r0.add(x / 2 + 31),
+                        ],
+                    ];
                     ((*pixels.add(rowstart + x / 8)).as_mut_ptr() as *mut u64)
-                        .write(mand64(r0.add(x / 2), init_i));
+                        .write(mand64(&init_r, init_i));
                 }
             }
         }
