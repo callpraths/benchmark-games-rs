@@ -157,13 +157,12 @@ unsafe fn mand8(init_r: *mut __m128d, init_i: __m128d) -> u64 {
 unsafe fn mand64(mut init_r: *mut __m128d, init_i: __m128d) -> u64 {
     let mut pix64: u64 = 0;
 
-    for byte in 0..8 {
+    for _ in 0..8 {
         let pix8 = mand8(init_r, init_i);
 
         pix64 = (pix64 >> 8) | (pix8 << 56);
         init_r = init_r.add(4);
     }
-
     return pix64;
 }
 
@@ -272,9 +271,9 @@ fn main() {
             // #pragma omp parallel for schedule(guided)
             for y in 0..wid_ht {
                 let init_i = _mm_set_pd(*i0.add(y), *i0.add(y));
-                let rowstart = y * wid_ht / 64;
+                let rowstart = y * wid_ht / 8;
                 for x in (0..wid_ht).step_by(64) {
-                    ((*pixels.add(rowstart + x / 64)).as_mut_ptr() as *mut u64)
+                    ((*pixels.add(rowstart + x / 8)).as_mut_ptr() as *mut u64)
                         .write(mand64(r0.add(x / 2), init_i));
                 }
             }
