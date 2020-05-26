@@ -248,6 +248,7 @@ fn main() {
         // A somewhat more Rusty way to do this would be to create a Vec and
         // then work with Box<[T]> below, but I'm avoiding introducing Vec and
         // Slice in this first transliteration.
+
         let r0_layout = Layout::from_size_align(
             mem::size_of::<[__m128d; 4]>() * wid_ht / 8,
             mem::align_of::<[__m128d; 4]>(),
@@ -255,13 +256,6 @@ fn main() {
         .unwrap();
         let raw_r0 = alloc(r0_layout);
         let r0: *mut mem::MaybeUninit<[__m128d; 4]> = mem::transmute(raw_r0);
-
-        let i0_layout =
-            Layout::from_size_align(mem::size_of::<f64>() * wid_ht, mem::align_of::<f64>())
-                .unwrap();
-        let raw_i0 = alloc(i0_layout);
-        let i0: *mut mem::MaybeUninit<f64> = mem::transmute(raw_i0);
-
         for x in (0..wid_ht).step_by(8) {
             (*r0.add(x / 8)).as_mut_ptr().write([
                 calc_init_r_pair(x as f64, wid_ht as f64),
@@ -270,15 +264,31 @@ fn main() {
                 calc_init_r_pair((x + 6) as f64, wid_ht as f64),
             ]);
         }
+        // We're done initializing.
+        let r0: *mut [__m128d; 4] = mem::transmute(r0);
+
+        /*
+        let i0_layout =
+            Layout::from_size_align(mem::size_of::<f64>() * wid_ht, mem::align_of::<f64>())
+                .unwrap();
+        let raw_i0 = alloc(i0_layout);
+        let i0: *mut mem::MaybeUninit<f64> = mem::transmute(raw_i0);
         for y in 0..wid_ht {
             (*i0.add(y))
                 .as_mut_ptr()
                 .write((2.0 / wid_ht as f64) * y as f64 - 1.0);
         }
-
         // We're done initializing.
-        let r0: *mut [__m128d; 4] = mem::transmute(r0);
         let i0: *mut f64 = mem::transmute(i0);
+        */
+
+        let i0 = {
+            let mut i0: Vec<f64> = Vec::with_capacity(wid_ht);
+            for y in 0..wid_ht {
+                i0.push((2.0 / wid_ht as f64) * y as f64 - 1.0)
+            }
+            i0
+        };
 
         // generate the bitmap
 
@@ -287,8 +297,8 @@ fn main() {
             // process 8 pixels (one byte) at a time
             // TODO: Parallelize. From the original program:
             // #pragma omp parallel for schedule(guided)
-            for y in 0..wid_ht {
-                let init_i = mm::set_pd(*i0.add(y), *i0.add(y));
+            for (y, i) in i0.iter().enumerate() {
+                let init_i = mm::set_pd(*i, *i);
                 let rowstart = y * wid_ht / 8;
                 // Casting u64 to u8 works out in this case, but is clearly
                 // yucky.
@@ -303,8 +313,8 @@ fn main() {
             // process 64 pixels (8 bytes) at a time
             // TODO: Parallelize. From the original program:
             // #pragma omp parallel for schedule(guided)
-            for y in 0..wid_ht {
-                let init_i = mm::set_pd(*i0.add(y), *i0.add(y));
+            for (y, i) in i0.iter().enumerate() {
+                let init_i = mm::set_pd(*i, *i);
                 let rowstart = y * wid_ht / 8;
                 for x in (0..(wid_ht / 8)).step_by(8) {
                     // This copy causes a small performance regression.
@@ -331,7 +341,7 @@ fn main() {
             .write_all(std::slice::from_raw_parts(buffer, dataLength))
             .unwrap();
 
-        dealloc(raw_i0, i0_layout);
+        //dealloc(raw_i0, i0_layout);
         dealloc(raw_r0, r0_layout);
         dealloc(raw_buffer, buffer_layout);
     }
