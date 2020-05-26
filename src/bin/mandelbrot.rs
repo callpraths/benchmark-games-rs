@@ -12,9 +12,62 @@
 #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
 
 use std::alloc::{alloc, dealloc, Layout};
-use std::arch::x86_64::*;
+use std::arch::x86_64::__m128d;
 use std::io::Write;
 use std::mem;
+
+#[cfg(target_feature = "sse2")]
+mod mm {
+    use std::arch::x86_64::*;
+
+    #[inline(always)]
+    pub fn extract_lower(v: __m128d) -> f64 {
+        // Safety: Only compiled when the target supports SSE2 instructions.
+        unsafe { _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00000)) }
+    }
+
+    #[inline(always)]
+    pub fn extract_upper(v: __m128d) -> f64 {
+        // Safety: Only compiled when the target supports SSE2 instructions.
+        unsafe { _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00001)) }
+    }
+
+    #[inline(always)]
+    pub fn mul_pd(a: __m128d, b: __m128d) -> __m128d {
+        // Safety: Only compiled when the target supports SSE2 instructions.
+        unsafe { _mm_mul_pd(a, b) }
+    }
+
+    #[inline(always)]
+    pub fn div_pd(a: __m128d, b: __m128d) -> __m128d {
+        // Safety: Only compiled when the target supports SSE2 instructions.
+        unsafe { _mm_div_pd(a, b) }
+    }
+
+    #[inline(always)]
+    pub fn add_pd(a: __m128d, b: __m128d) -> __m128d {
+        // Safety: Only compiled when the target supports SSE2 instructions.
+        unsafe { _mm_add_pd(a, b) }
+    }
+
+    #[inline(always)]
+    pub fn sub_pd(a: __m128d, b: __m128d) -> __m128d {
+        // Safety: Only compiled when the target supports SSE2 instructions.
+        unsafe { _mm_sub_pd(a, b) }
+    }
+
+    #[inline(always)]
+    pub fn set_pd(a: f64, b: f64) -> __m128d {
+        // Safety: Only compiled when the target supports SSE2 instructions.
+        unsafe { _mm_set_pd(a, b) }
+    }
+
+    #[inline(always)]
+    pub fn set1_pd(a: f64) -> __m128d {
+        // Safety: Only compiled when the target supports SSE2 instructions.
+        unsafe { _mm_set1_pd(a) }
+    }
+}
 
 fn numDigits(mut n: usize) -> usize {
     let mut len: usize = 0;
@@ -23,20 +76,6 @@ fn numDigits(mut n: usize) -> usize {
         len += 1;
     }
     len
-}
-
-#[inline(always)]
-#[cfg(target_feature = "sse2")]
-fn _mm_extract_lower(v: __m128d) -> f64 {
-    // Safety: Only compiled when the target supports SSE2 instructions.
-    unsafe { _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00000)) }
-}
-
-#[inline(always)]
-#[cfg(target_feature = "sse2")]
-fn _mm_extract_upper(v: __m128d) -> f64 {
-    // Safety: Only compiled when the target supports SSE2 instructions.
-    unsafe { _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00001)) }
 }
 
 #[inline(always)]
@@ -52,40 +91,40 @@ fn vec_nle(v: &[__m128d; 4], f: f64) -> bool {
 
     // Rust compiler had trouble unrolling loop here, which led to a noticeable
     // performance hit, so unroll manually.
-    _mm_extract_lower(v[0]) > f
-        && _mm_extract_upper(v[0]) > f
-        && _mm_extract_lower(v[1]) > f
-        && _mm_extract_upper(v[1]) > f
-        && _mm_extract_lower(v[2]) > f
-        && _mm_extract_upper(v[2]) > f
-        && _mm_extract_lower(v[3]) > f
-        && _mm_extract_upper(v[3]) > f
+    mm::extract_lower(v[0]) > f
+        && mm::extract_upper(v[0]) > f
+        && mm::extract_lower(v[1]) > f
+        && mm::extract_upper(v[1]) > f
+        && mm::extract_lower(v[2]) > f
+        && mm::extract_upper(v[2]) > f
+        && mm::extract_lower(v[3]) > f
+        && mm::extract_upper(v[3]) > f
 }
 
 #[inline(always)]
 fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u64) {
-    if !(_mm_extract_lower(v[0]) <= f) {
+    if !(mm::extract_lower(v[0]) <= f) {
         *pix8 &= 0b0111_1111; // 0x7f
     }
-    if !(_mm_extract_upper(v[0]) <= f) {
+    if !(mm::extract_upper(v[0]) <= f) {
         *pix8 &= 0b1011_1111; // 0xbf
     }
-    if !(_mm_extract_lower(v[1]) <= f) {
+    if !(mm::extract_lower(v[1]) <= f) {
         *pix8 &= 0b1101_1111; // 0xdf
     }
-    if !(_mm_extract_upper(v[1]) <= f) {
+    if !(mm::extract_upper(v[1]) <= f) {
         *pix8 &= 0b1110_1111; // 0xef
     }
-    if !(_mm_extract_lower(v[2]) <= f) {
+    if !(mm::extract_lower(v[2]) <= f) {
         *pix8 &= 0b1111_0111; // 0xf7
     }
-    if !(_mm_extract_upper(v[2]) <= f) {
+    if !(mm::extract_upper(v[2]) <= f) {
         *pix8 &= 0b1111_1011; // 0xfb
     }
-    if !(_mm_extract_lower(v[3]) <= f) {
+    if !(mm::extract_lower(v[3]) <= f) {
         *pix8 &= 0b1111_1101; // 0xfd
     }
-    if !(_mm_extract_upper(v[3]) <= f) {
+    if !(mm::extract_upper(v[3]) <= f) {
         *pix8 &= 0b1111_1110; // 0xfe
     }
 }
@@ -104,14 +143,13 @@ fn calcSum(
         let cur_r = r[idx];
         let cur_i = i[idx];
         let cur_init_r = init_r[idx];
-        // Safety: Only compiled when the target supports SSE2 instructions.
-        // So all _mm_* functions are safe.
-        let r2: __m128d = unsafe { _mm_mul_pd(cur_r, cur_r) };
-        let i2: __m128d = unsafe { _mm_mul_pd(cur_i, cur_i) };
-        let ri: __m128d = unsafe { _mm_mul_pd(cur_r, cur_i) };
-        sum[idx] = unsafe { _mm_add_pd(r2, i2) };
-        r[idx] = unsafe { _mm_add_pd(_mm_sub_pd(r2, i2), cur_init_r) };
-        i[idx] = unsafe { _mm_add_pd(_mm_add_pd(ri, ri), init_i) };
+
+        let r2: __m128d = mm::mul_pd(cur_r, cur_r);
+        let i2: __m128d = mm::mul_pd(cur_i, cur_i);
+        let ri: __m128d = mm::mul_pd(cur_r, cur_i);
+        sum[idx] = mm::add_pd(r2, i2);
+        r[idx] = mm::add_pd(mm::sub_pd(r2, i2), cur_init_r);
+        i[idx] = mm::add_pd(mm::add_pd(ri, ri), init_i);
     }
 }
 
@@ -120,9 +158,7 @@ fn calcSum(
 fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u64 {
     let mut r = *init_r;
     let mut i = [init_i, init_i, init_i, init_i];
-    // Safety: Only compiled when the target supports SSE2 instructions.
-    // So all _mm_* functions are safe.
-    let zero = unsafe { _mm_set1_pd(0.0) };
+    let zero = mm::set1_pd(0.0);
     let mut sum = [zero; 4];
 
     let mut pix8: u64 = 0xff;
@@ -213,15 +249,15 @@ fn main() {
         let i0: *mut mem::MaybeUninit<f64> = mem::transmute(raw_i0);
 
         for xy in (0..wid_ht).step_by(2) {
-            (*r0.add(xy >> 1)).as_mut_ptr().write(_mm_sub_pd(
-                _mm_mul_pd(
-                    // NB: _mm_set_pd() reverses the order of arguments when packing
+            (*r0.add(xy >> 1)).as_mut_ptr().write(mm::sub_pd(
+                mm::mul_pd(
+                    // NB: mm::set_pd() reverses the order of arguments when packing
                     // f64 into a __m128d.
                     // https://stackoverflow.com/questions/5237961/why-does-does-sse-set-mm-set-ps-reverse-the-order-of-arguments
-                    _mm_set_pd((xy + 1) as f64, xy as f64),
-                    _mm_div_pd(_mm_set1_pd(2.0), _mm_set1_pd(wid_ht as f64)),
+                    mm::set_pd((xy + 1) as f64, xy as f64),
+                    mm::div_pd(mm::set1_pd(2.0), mm::set1_pd(wid_ht as f64)),
                 ),
-                _mm_set1_pd(1.5),
+                mm::set1_pd(1.5),
             ));
             (*i0.add(xy))
                 .as_mut_ptr()
@@ -243,7 +279,7 @@ fn main() {
             // TODO: Parallelize. From the original program:
             // #pragma omp parallel for schedule(guided)
             for y in 0..wid_ht {
-                let init_i = _mm_set_pd(*i0.add(y), *i0.add(y));
+                let init_i = mm::set_pd(*i0.add(y), *i0.add(y));
                 let rowstart = y * wid_ht / 8;
                 // Casting u64 to u8 works out in this case, but is clearly
                 // yucky.
@@ -267,7 +303,7 @@ fn main() {
             // TODO: Parallelize. From the original program:
             // #pragma omp parallel for schedule(guided)
             for y in 0..wid_ht {
-                let init_i = _mm_set_pd(*i0.add(y), *i0.add(y));
+                let init_i = mm::set_pd(*i0.add(y), *i0.add(y));
                 let rowstart = y * wid_ht / 8;
                 for x in (0..wid_ht).step_by(64) {
                     // This copy causes a small performance regression.
