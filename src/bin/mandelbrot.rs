@@ -180,7 +180,7 @@ fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u64 {
     return pix8;
 }
 
-fn mand64(init_r: &[[__m128d; 4]; 8], init_i: __m128d) -> u64 {
+fn mand64(init_r: &[&[__m128d; 4]; 8], init_i: __m128d) -> u64 {
     let mut pix64: u64 = 0;
 
     for init_r in init_r {
@@ -189,6 +189,20 @@ fn mand64(init_r: &[[__m128d; 4]; 8], init_i: __m128d) -> u64 {
         pix64 = (pix64 >> 8) | (pix8 << 56);
     }
     return pix64;
+}
+
+#[inline(always)]
+fn calc_init_r_pair(x: f64, wid_ht: f64) -> __m128d {
+    mm::sub_pd(
+        mm::mul_pd(
+            // NB: mm::set_pd() reverses the order of arguments when packing
+            // f64 into a __m128d.
+            // https://stackoverflow.com/questions/5237961/why-does-does-sse-set-mm-set-ps-reverse-the-order-of-arguments
+            mm::set_pd(x + 1.0, x),
+            mm::div_pd(mm::set1_pd(2.0), mm::set1_pd(wid_ht)),
+        ),
+        mm::set1_pd(1.5),
+    )
 }
 
 fn main() {
@@ -235,12 +249,12 @@ fn main() {
         // then work with Box<[T]> below, but I'm avoiding introducing Vec and
         // Slice in this first transliteration.
         let r0_layout = Layout::from_size_align(
-            mem::size_of::<__m128d>() * wid_ht / 2,
-            mem::align_of::<__m128d>(),
+            mem::size_of::<[__m128d; 4]>() * wid_ht / 8,
+            mem::align_of::<[__m128d; 4]>(),
         )
         .unwrap();
         let raw_r0 = alloc(r0_layout);
-        let r0: *mut mem::MaybeUninit<__m128d> = mem::transmute(raw_r0);
+        let r0: *mut mem::MaybeUninit<[__m128d; 4]> = mem::transmute(raw_r0);
 
         let i0_layout =
             Layout::from_size_align(mem::size_of::<f64>() * wid_ht, mem::align_of::<f64>())
@@ -248,17 +262,13 @@ fn main() {
         let raw_i0 = alloc(i0_layout);
         let i0: *mut mem::MaybeUninit<f64> = mem::transmute(raw_i0);
 
-        for xy in (0..wid_ht).step_by(2) {
-            (*r0.add(xy >> 1)).as_mut_ptr().write(mm::sub_pd(
-                mm::mul_pd(
-                    // NB: mm::set_pd() reverses the order of arguments when packing
-                    // f64 into a __m128d.
-                    // https://stackoverflow.com/questions/5237961/why-does-does-sse-set-mm-set-ps-reverse-the-order-of-arguments
-                    mm::set_pd((xy + 1) as f64, xy as f64),
-                    mm::div_pd(mm::set1_pd(2.0), mm::set1_pd(wid_ht as f64)),
-                ),
-                mm::set1_pd(1.5),
-            ));
+        for x in (0..wid_ht).step_by(8) {
+            (*r0.add(x / 8)).as_mut_ptr().write([
+                calc_init_r_pair(x as f64, wid_ht as f64),
+                calc_init_r_pair((x + 2) as f64, wid_ht as f64),
+                calc_init_r_pair((x + 4) as f64, wid_ht as f64),
+                calc_init_r_pair((x + 6) as f64, wid_ht as f64),
+            ]);
         }
         for y in 0..wid_ht {
             (*i0.add(y))
@@ -267,7 +277,7 @@ fn main() {
         }
 
         // We're done initializing.
-        let r0: *mut __m128d = mem::transmute(r0);
+        let r0: *mut [__m128d; 4] = mem::transmute(r0);
         let i0: *mut f64 = mem::transmute(i0);
 
         // generate the bitmap
@@ -283,18 +293,10 @@ fn main() {
                 // Casting u64 to u8 works out in this case, but is clearly
                 // yucky.
                 // https://doc.rust-lang.org/reference/expressions/operator-expr.html#semantics
-                for x in (0..wid_ht).step_by(8) {
-                    // This copy causes a small performance regression.
-                    let init_r = [
-                        *r0.add(x / 2),
-                        *r0.add(x / 2 + 1),
-                        *r0.add(x / 2 + 2),
-                        *r0.add(x / 2 + 3),
-                    ];
-
-                    (*pixels.add(rowstart + x / 8))
+                for x in 0..(wid_ht / 8) {
+                    (*pixels.add(rowstart + x))
                         .as_mut_ptr()
-                        .write(mand8(&init_r, init_i) as u8);
+                        .write(mand8(&*r0.add(x), init_i) as u8);
                 }
             }
         } else {
@@ -304,59 +306,19 @@ fn main() {
             for y in 0..wid_ht {
                 let init_i = mm::set_pd(*i0.add(y), *i0.add(y));
                 let rowstart = y * wid_ht / 8;
-                for x in (0..wid_ht).step_by(64) {
+                for x in (0..(wid_ht / 8)).step_by(8) {
                     // This copy causes a small performance regression.
                     let init_r = [
-                        [
-                            *r0.add(x / 2),
-                            *r0.add(x / 2 + 1),
-                            *r0.add(x / 2 + 2),
-                            *r0.add(x / 2 + 3),
-                        ],
-                        [
-                            *r0.add(x / 2 + 4),
-                            *r0.add(x / 2 + 5),
-                            *r0.add(x / 2 + 6),
-                            *r0.add(x / 2 + 7),
-                        ],
-                        [
-                            *r0.add(x / 2 + 8),
-                            *r0.add(x / 2 + 9),
-                            *r0.add(x / 2 + 10),
-                            *r0.add(x / 2 + 11),
-                        ],
-                        [
-                            *r0.add(x / 2 + 12),
-                            *r0.add(x / 2 + 13),
-                            *r0.add(x / 2 + 14),
-                            *r0.add(x / 2 + 15),
-                        ],
-                        [
-                            *r0.add(x / 2 + 16),
-                            *r0.add(x / 2 + 17),
-                            *r0.add(x / 2 + 18),
-                            *r0.add(x / 2 + 19),
-                        ],
-                        [
-                            *r0.add(x / 2 + 20),
-                            *r0.add(x / 2 + 21),
-                            *r0.add(x / 2 + 22),
-                            *r0.add(x / 2 + 23),
-                        ],
-                        [
-                            *r0.add(x / 2 + 24),
-                            *r0.add(x / 2 + 25),
-                            *r0.add(x / 2 + 26),
-                            *r0.add(x / 2 + 27),
-                        ],
-                        [
-                            *r0.add(x / 2 + 28),
-                            *r0.add(x / 2 + 29),
-                            *r0.add(x / 2 + 30),
-                            *r0.add(x / 2 + 31),
-                        ],
+                        &(*r0.add(x)),
+                        &(*r0.add(x + 1)),
+                        &(*r0.add(x + 2)),
+                        &(*r0.add(x + 3)),
+                        &(*r0.add(x + 4)),
+                        &(*r0.add(x + 5)),
+                        &(*r0.add(x + 6)),
+                        &(*r0.add(x + 7)),
                     ];
-                    ((*pixels.add(rowstart + x / 8)).as_mut_ptr() as *mut u64)
+                    ((*pixels.add(rowstart + x)).as_mut_ptr() as *mut u64)
                         .write(mand64(&init_r, init_i));
                 }
             }
