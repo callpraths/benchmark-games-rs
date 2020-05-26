@@ -205,6 +205,16 @@ fn calc_init_r_pair(x: f64, wid_ht: f64) -> __m128d {
     )
 }
 
+#[inline(always)]
+fn calc_init_r_chunk(x: f64, wid_ht: f64) -> [__m128d; 4] {
+    [
+        calc_init_r_pair(x as f64, wid_ht as f64),
+        calc_init_r_pair((x + 2.0) as f64, wid_ht as f64),
+        calc_init_r_pair((x + 4.0) as f64, wid_ht as f64),
+        calc_init_r_pair((x + 6.0) as f64, wid_ht as f64),
+    ]
+}
+
 fn main() {
     unsafe {
         // get width/height from arguments
@@ -256,12 +266,7 @@ fn main() {
             let r0 = {
                 let mut r0: Vec<[__m128d; 4]> = Vec::with_capacity(wid_ht / 8);
                 for x in (0..wid_ht).step_by(8) {
-                    r0.push([
-                        calc_init_r_pair(x as f64, wid_ht as f64),
-                        calc_init_r_pair((x + 2) as f64, wid_ht as f64),
-                        calc_init_r_pair((x + 4) as f64, wid_ht as f64),
-                        calc_init_r_pair((x + 6) as f64, wid_ht as f64),
-                    ]);
+                    r0.push(calc_init_r_chunk(x as f64, wid_ht as f64));
                 }
                 r0
             };
@@ -286,54 +291,14 @@ fn main() {
                 let mut r0: Vec<[[__m128d; 4]; 8]> = Vec::with_capacity(wid_ht / 64);
                 for x in (0..wid_ht).step_by(64) {
                     r0.push([
-                        [
-                            calc_init_r_pair(x as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 2) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 4) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 6) as f64, wid_ht as f64),
-                        ],
-                        [
-                            calc_init_r_pair((x + 8) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 10) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 12) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 14) as f64, wid_ht as f64),
-                        ],
-                        [
-                            calc_init_r_pair((x + 16) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 18) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 20) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 22) as f64, wid_ht as f64),
-                        ],
-                        [
-                            calc_init_r_pair((x + 24) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 26) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 28) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 30) as f64, wid_ht as f64),
-                        ],
-                        [
-                            calc_init_r_pair((x + 32) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 34) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 36) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 38) as f64, wid_ht as f64),
-                        ],
-                        [
-                            calc_init_r_pair((x + 40) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 42) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 44) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 46) as f64, wid_ht as f64),
-                        ],
-                        [
-                            calc_init_r_pair((x + 48) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 50) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 52) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 54) as f64, wid_ht as f64),
-                        ],
-                        [
-                            calc_init_r_pair((x + 56) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 58) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 60) as f64, wid_ht as f64),
-                            calc_init_r_pair((x + 62) as f64, wid_ht as f64),
-                        ],
+                        calc_init_r_chunk(x as f64, wid_ht as f64),
+                        calc_init_r_chunk((x + 8) as f64, wid_ht as f64),
+                        calc_init_r_chunk((x + 16) as f64, wid_ht as f64),
+                        calc_init_r_chunk((x + 24) as f64, wid_ht as f64),
+                        calc_init_r_chunk((x + 32) as f64, wid_ht as f64),
+                        calc_init_r_chunk((x + 40) as f64, wid_ht as f64),
+                        calc_init_r_chunk((x + 48) as f64, wid_ht as f64),
+                        calc_init_r_chunk((x + 56) as f64, wid_ht as f64),
                     ]);
                 }
                 r0
