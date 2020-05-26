@@ -259,12 +259,11 @@ fn main() {
                 ),
                 mm::set1_pd(1.5),
             ));
-            (*i0.add(xy))
+        }
+        for y in 0..wid_ht {
+            (*i0.add(y))
                 .as_mut_ptr()
-                .write((2.0 / wid_ht as f64) * xy as f64 - 1.0);
-            (*i0.add(xy + 1))
-                .as_mut_ptr()
-                .write((2.0 / wid_ht as f64) * (xy + 1) as f64 - 1.0);
+                .write((2.0 / wid_ht as f64) * y as f64 - 1.0);
         }
 
         // We're done initializing.
