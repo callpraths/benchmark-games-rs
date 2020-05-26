@@ -180,7 +180,7 @@ fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u64 {
     return pix8;
 }
 
-fn mand64(init_r: &[&[__m128d; 4]; 8], init_i: __m128d) -> u64 {
+fn mand64(init_r: &[[__m128d; 4]; 8], init_i: __m128d) -> u64 {
     let mut pix64: u64 = 0;
 
     for init_r in init_r {
@@ -241,47 +241,6 @@ fn main() {
             (*header.add(i)).as_mut_ptr().write(*b);
         }
 
-        // calculate initial values, store in r0, i0
-        // Note: r0/i0 below are _not_ identical to the original C program.
-        // The C program allocated dynamically sized arrays on the stack, which
-        // is impossible in Rust.
-        // A somewhat more Rusty way to do this would be to create a Vec and
-        // then work with Box<[T]> below, but I'm avoiding introducing Vec and
-        // Slice in this first transliteration.
-
-        let r0_layout = Layout::from_size_align(
-            mem::size_of::<[__m128d; 4]>() * wid_ht / 8,
-            mem::align_of::<[__m128d; 4]>(),
-        )
-        .unwrap();
-        let raw_r0 = alloc(r0_layout);
-        let r0: *mut mem::MaybeUninit<[__m128d; 4]> = mem::transmute(raw_r0);
-        for x in (0..wid_ht).step_by(8) {
-            (*r0.add(x / 8)).as_mut_ptr().write([
-                calc_init_r_pair(x as f64, wid_ht as f64),
-                calc_init_r_pair((x + 2) as f64, wid_ht as f64),
-                calc_init_r_pair((x + 4) as f64, wid_ht as f64),
-                calc_init_r_pair((x + 6) as f64, wid_ht as f64),
-            ]);
-        }
-        // We're done initializing.
-        let r0: *mut [__m128d; 4] = mem::transmute(r0);
-
-        /*
-        let i0_layout =
-            Layout::from_size_align(mem::size_of::<f64>() * wid_ht, mem::align_of::<f64>())
-                .unwrap();
-        let raw_i0 = alloc(i0_layout);
-        let i0: *mut mem::MaybeUninit<f64> = mem::transmute(raw_i0);
-        for y in 0..wid_ht {
-            (*i0.add(y))
-                .as_mut_ptr()
-                .write((2.0 / wid_ht as f64) * y as f64 - 1.0);
-        }
-        // We're done initializing.
-        let i0: *mut f64 = mem::transmute(i0);
-        */
-
         let i0 = {
             let mut i0: Vec<f64> = Vec::with_capacity(wid_ht);
             for y in 0..wid_ht {
@@ -291,10 +250,22 @@ fn main() {
         };
 
         // generate the bitmap
-
         let use8 = wid_ht % 64 != 0;
         if use8 {
             // process 8 pixels (one byte) at a time
+            let r0 = {
+                let mut r0: Vec<[__m128d; 4]> = Vec::with_capacity(wid_ht / 8);
+                for x in (0..wid_ht).step_by(8) {
+                    r0.push([
+                        calc_init_r_pair(x as f64, wid_ht as f64),
+                        calc_init_r_pair((x + 2) as f64, wid_ht as f64),
+                        calc_init_r_pair((x + 4) as f64, wid_ht as f64),
+                        calc_init_r_pair((x + 6) as f64, wid_ht as f64),
+                    ]);
+                }
+                r0
+            };
+
             // TODO: Parallelize. From the original program:
             // #pragma omp parallel for schedule(guided)
             for (y, i) in i0.iter().enumerate() {
@@ -303,33 +274,79 @@ fn main() {
                 // Casting u64 to u8 works out in this case, but is clearly
                 // yucky.
                 // https://doc.rust-lang.org/reference/expressions/operator-expr.html#semantics
-                for x in 0..(wid_ht / 8) {
+                for (x, r) in r0.iter().enumerate() {
                     (*pixels.add(rowstart + x))
                         .as_mut_ptr()
-                        .write(mand8(&*r0.add(x), init_i) as u8);
+                        .write(mand8(&*r, init_i) as u8);
                 }
             }
         } else {
             // process 64 pixels (8 bytes) at a time
+            let r0 = {
+                let mut r0: Vec<[[__m128d; 4]; 8]> = Vec::with_capacity(wid_ht / 64);
+                for x in (0..wid_ht).step_by(64) {
+                    r0.push([
+                        [
+                            calc_init_r_pair(x as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 2) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 4) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 6) as f64, wid_ht as f64),
+                        ],
+                        [
+                            calc_init_r_pair((x + 8) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 10) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 12) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 14) as f64, wid_ht as f64),
+                        ],
+                        [
+                            calc_init_r_pair((x + 16) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 18) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 20) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 22) as f64, wid_ht as f64),
+                        ],
+                        [
+                            calc_init_r_pair((x + 24) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 26) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 28) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 30) as f64, wid_ht as f64),
+                        ],
+                        [
+                            calc_init_r_pair((x + 32) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 34) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 36) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 38) as f64, wid_ht as f64),
+                        ],
+                        [
+                            calc_init_r_pair((x + 40) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 42) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 44) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 46) as f64, wid_ht as f64),
+                        ],
+                        [
+                            calc_init_r_pair((x + 48) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 50) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 52) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 54) as f64, wid_ht as f64),
+                        ],
+                        [
+                            calc_init_r_pair((x + 56) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 58) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 60) as f64, wid_ht as f64),
+                            calc_init_r_pair((x + 62) as f64, wid_ht as f64),
+                        ],
+                    ]);
+                }
+                r0
+            };
+
             // TODO: Parallelize. From the original program:
             // #pragma omp parallel for schedule(guided)
             for (y, i) in i0.iter().enumerate() {
                 let init_i = mm::set_pd(*i, *i);
                 let rowstart = y * wid_ht / 8;
-                for x in (0..(wid_ht / 8)).step_by(8) {
-                    // This copy causes a small performance regression.
-                    let init_r = [
-                        &(*r0.add(x)),
-                        &(*r0.add(x + 1)),
-                        &(*r0.add(x + 2)),
-                        &(*r0.add(x + 3)),
-                        &(*r0.add(x + 4)),
-                        &(*r0.add(x + 5)),
-                        &(*r0.add(x + 6)),
-                        &(*r0.add(x + 7)),
-                    ];
-                    ((*pixels.add(rowstart + x)).as_mut_ptr() as *mut u64)
-                        .write(mand64(&init_r, init_i));
+                for (x, r) in r0.iter().enumerate() {
+                    ((*pixels.add(rowstart + x * 8)).as_mut_ptr() as *mut u64)
+                        .write(mand64(r, init_i));
                 }
             }
         }
@@ -341,8 +358,6 @@ fn main() {
             .write_all(std::slice::from_raw_parts(buffer, dataLength))
             .unwrap();
 
-        //dealloc(raw_i0, i0_layout);
-        dealloc(raw_r0, r0_layout);
         dealloc(raw_buffer, buffer_layout);
     }
 }
