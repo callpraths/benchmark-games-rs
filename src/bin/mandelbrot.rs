@@ -117,7 +117,6 @@ fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u64) {
     }
 }
 
-#[cfg(target_feature = "sse2")]
 fn calcSum(
     r: &mut [__m128d; 4],
     i: &mut [__m128d; 4],
@@ -140,7 +139,6 @@ fn calcSum(
     }
 }
 
-#[cfg(target_feature = "sse2")]
 fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u64 {
     let mut r = *init_r;
     let mut i = [init_i, init_i, init_i, init_i];
