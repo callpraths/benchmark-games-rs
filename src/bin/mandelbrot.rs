@@ -90,7 +90,7 @@ fn vec_nle(v: &[__m128d; 4], f: f64) -> bool {
         && mm::extract_upper(v[3]) > f
 }
 
-fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u64) {
+fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u8) {
     if !(mm::extract_lower(v[0]) <= f) {
         *pix8 &= 0b0111_1111; // 0x7f
     }
@@ -139,13 +139,13 @@ fn calcSum(
     }
 }
 
-fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u64 {
+fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u8 {
     let mut r = *init_r;
     let mut i = [init_i, init_i, init_i, init_i];
     let zero = mm::set1_pd(0.0);
     let mut sum = [zero; 4];
 
-    let mut pix8: u64 = 0xff;
+    let mut pix8: u8 = 0xff;
     for j in 0..6 {
         for k in 0..8 {
             calcSum(&mut r, &mut i, &mut sum, &init_r, init_i);
@@ -222,11 +222,9 @@ fn main() {
     for (y, i) in i0.iter().enumerate() {
         let init_i = mm::set_pd(*i, *i);
         let rowstart = y * wid_ht / 8;
-        // Casting u64 to u8 works out in this case, but is clearly
-        // yucky.
-        // https://doc.rust-lang.org/reference/expressions/operator-expr.html#semantics
+
         for (x, r) in r0.iter().enumerate() {
-            pixels.push(mand8(&*r, init_i) as u8);
+            pixels.push(mand8(&*r, init_i));
         }
     }
 
