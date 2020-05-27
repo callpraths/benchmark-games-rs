@@ -180,17 +180,6 @@ fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u64 {
     return pix8;
 }
 
-fn mand64(init_r: &[[__m128d; 4]; 8], init_i: __m128d) -> u64 {
-    let mut pix64: u64 = 0;
-
-    for init_r in init_r {
-        let pix8 = mand8(&init_r, init_i);
-
-        pix64 = (pix64 >> 8) | (pix8 << 56);
-    }
-    return pix64;
-}
-
 #[inline(always)]
 fn calc_init_r_pair(x: f64, wid_ht: f64) -> __m128d {
     mm::sub_pd(
@@ -234,7 +223,6 @@ fn main() {
         let pixels_length = wid_ht * (wid_ht >> 3);
         let pixels_layout = Layout::from_size_align(pixels_length, 8).unwrap();
         let raw_pixels = alloc(pixels_layout);
-        // We already .add(pad) so that header is offset to the start of our write area.
         let pixels: *mut mem::MaybeUninit<u8> = mem::transmute(raw_pixels);
 
         let i0 = {
@@ -245,60 +233,27 @@ fn main() {
             i0
         };
 
-        // generate the bitmap
-        let use8 = wid_ht % 64 != 0;
-        if use8 {
-            // process 8 pixels (one byte) at a time
-            let r0 = {
-                let mut r0: Vec<[__m128d; 4]> = Vec::with_capacity(wid_ht / 8);
-                for x in (0..wid_ht).step_by(8) {
-                    r0.push(calc_init_r_chunk(x as f64, wid_ht as f64));
-                }
-                r0
-            };
-
-            // TODO: Parallelize. From the original program:
-            // #pragma omp parallel for schedule(guided)
-            for (y, i) in i0.iter().enumerate() {
-                let init_i = mm::set_pd(*i, *i);
-                let rowstart = y * wid_ht / 8;
-                // Casting u64 to u8 works out in this case, but is clearly
-                // yucky.
-                // https://doc.rust-lang.org/reference/expressions/operator-expr.html#semantics
-                for (x, r) in r0.iter().enumerate() {
-                    (*pixels.add(rowstart + x))
-                        .as_mut_ptr()
-                        .write(mand8(&*r, init_i) as u8);
-                }
+        // process 8 pixels (one byte) at a time
+        let r0 = {
+            let mut r0: Vec<[__m128d; 4]> = Vec::with_capacity(wid_ht / 8);
+            for x in (0..wid_ht).step_by(8) {
+                r0.push(calc_init_r_chunk(x as f64, wid_ht as f64));
             }
-        } else {
-            // process 64 pixels (8 bytes) at a time
-            let r0 = {
-                let mut r0: Vec<[[__m128d; 4]; 8]> = Vec::with_capacity(wid_ht / 64);
-                for x in (0..wid_ht).step_by(64) {
-                    r0.push([
-                        calc_init_r_chunk(x as f64, wid_ht as f64),
-                        calc_init_r_chunk((x + 8) as f64, wid_ht as f64),
-                        calc_init_r_chunk((x + 16) as f64, wid_ht as f64),
-                        calc_init_r_chunk((x + 24) as f64, wid_ht as f64),
-                        calc_init_r_chunk((x + 32) as f64, wid_ht as f64),
-                        calc_init_r_chunk((x + 40) as f64, wid_ht as f64),
-                        calc_init_r_chunk((x + 48) as f64, wid_ht as f64),
-                        calc_init_r_chunk((x + 56) as f64, wid_ht as f64),
-                    ]);
-                }
-                r0
-            };
+            r0
+        };
 
-            // TODO: Parallelize. From the original program:
-            // #pragma omp parallel for schedule(guided)
-            for (y, i) in i0.iter().enumerate() {
-                let init_i = mm::set_pd(*i, *i);
-                let rowstart = y * wid_ht / 8;
-                for (x, r) in r0.iter().enumerate() {
-                    ((*pixels.add(rowstart + x * 8)).as_mut_ptr() as *mut u64)
-                        .write(mand64(r, init_i));
-                }
+        // TODO: Parallelize. From the original program:
+        // #pragma omp parallel for schedule(guided)
+        for (y, i) in i0.iter().enumerate() {
+            let init_i = mm::set_pd(*i, *i);
+            let rowstart = y * wid_ht / 8;
+            // Casting u64 to u8 works out in this case, but is clearly
+            // yucky.
+            // https://doc.rust-lang.org/reference/expressions/operator-expr.html#semantics
+            for (x, r) in r0.iter().enumerate() {
+                (*pixels.add(rowstart + x))
+                    .as_mut_ptr()
+                    .write(mand8(&*r, init_i) as u8);
             }
         }
 
