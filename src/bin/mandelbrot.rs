@@ -6,11 +6,10 @@
 // inspired by the C-to-Rust conversion described at
 // http://cliffle.com/p/dangerust/
 
-// Temporary
-#![allow(dead_code, unused_variables)]
 // Will outlast current iteration.
 #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
 
+use itertools::iproduct;
 use std::arch::x86_64::__m128d;
 use std::io::Write;
 
@@ -57,15 +56,6 @@ mod mm {
         // Safety: Only compiled when the target supports SSE2 instructions.
         unsafe { _mm_set1_pd(a) }
     }
-}
-
-fn numDigits(mut n: usize) -> usize {
-    let mut len: usize = 0;
-    while n != 0 {
-        n = n / 10;
-        len += 1;
-    }
-    len
 }
 
 fn vec_nle(v: &[__m128d; 4], f: f64) -> bool {
@@ -146,8 +136,8 @@ fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u8 {
     let mut sum = [zero; 4];
 
     let mut pix8: u8 = 0xff;
-    for j in 0..6 {
-        for k in 0..8 {
+    for _ in 0..6 {
+        for _ in 0..8 {
             calcSum(&mut r, &mut i, &mut sum, &init_r, init_i);
         }
 
@@ -219,14 +209,8 @@ fn main() {
 
     // TODO: Parallelize. From the original program:
     // #pragma omp parallel for schedule(guided)
-    for (y, i) in i0.iter().enumerate() {
-        let init_i = mm::set_pd(*i, *i);
-        let rowstart = y * wid_ht / 8;
-
-        for (x, r) in r0.iter().enumerate() {
-            pixels.push(mand8(&*r, init_i));
-        }
-    }
-
+    pixels.extend(
+        iproduct!(i0.iter().map(|i| mm::set_pd(*i, *i)), r0.iter()).map(|(i, r)| mand8(&*r, i)),
+    );
     std::io::stdout().write_all(pixels.as_slice()).unwrap();
 }
