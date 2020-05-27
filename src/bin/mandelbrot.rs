@@ -224,32 +224,18 @@ fn main() {
         }
         wid_ht = (wid_ht + 7) & !(7 as usize);
 
-        // allocate memory for header and pixels
-        let headerLength = numDigits(wid_ht) * 2 + 5;
-        let pad = ((headerLength + 7) & !7) - headerLength; // pad aligns pixels on 8
-        let dataLength = headerLength + wid_ht * (wid_ht >> 3);
+        std::io::stdout()
+            .write_all(format!("P4\n{} {}\n", wid_ht, wid_ht).as_bytes())
+            .unwrap();
 
         // The original C program implicitly depended on the fact that malloc()
         // returns memory that is at least aligned to 8 bytes.
         // https://stackoverflow.com/questions/8752546/how-does-malloc-understand-alignment
-        let buffer_layout = Layout::from_size_align(dataLength, 8).unwrap();
-        let raw_buffer = alloc(buffer_layout);
+        let pixels_length = wid_ht * (wid_ht >> 3);
+        let pixels_layout = Layout::from_size_align(pixels_length, 8).unwrap();
+        let raw_pixels = alloc(pixels_layout);
         // We already .add(pad) so that header is offset to the start of our write area.
-        let header: *mut mem::MaybeUninit<u8> = mem::transmute(raw_buffer.add(pad));
-        let pixels = header.add(headerLength);
-
-        // generate the bitmap header
-        // The original C program directly used sprintf() in the header buffer.
-        // The String type in Rust is very particular about memory management,
-        // so it is not possible to transmute our fancily aligned buffer into a
-        // (MaybeUninit) String.
-        // Header generation is not the hottest part of this program, so let's
-        // move on.
-        let header_string = format!("P4\n{} {}\n", wid_ht, wid_ht);
-        // assert_eq!(header_string.as_bytes().len(), headerLength);
-        for (i, b) in header_string.as_bytes().iter().enumerate() {
-            (*header.add(i)).as_mut_ptr().write(*b);
-        }
+        let pixels: *mut mem::MaybeUninit<u8> = mem::transmute(raw_pixels);
 
         let i0 = {
             let mut i0: Vec<f64> = Vec::with_capacity(wid_ht);
@@ -316,13 +302,11 @@ fn main() {
             }
         }
 
-        let buffer: *mut u8 = mem::transmute(header);
-
-        // write the data
+        let pixels: *const u8 = mem::transmute(pixels);
         std::io::stdout()
-            .write_all(std::slice::from_raw_parts(buffer, dataLength))
+            .write_all(std::slice::from_raw_parts(pixels, pixels_length))
             .unwrap();
 
-        dealloc(raw_buffer, buffer_layout);
+        dealloc(raw_pixels, pixels_layout);
     }
 }
