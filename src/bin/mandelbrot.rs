@@ -18,49 +18,41 @@ use std::io::Write;
 mod mm {
     use std::arch::x86_64::*;
 
-    #[inline(always)]
     pub fn extract_lower(v: __m128d) -> f64 {
         // Safety: Only compiled when the target supports SSE2 instructions.
         unsafe { _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00000)) }
     }
 
-    #[inline(always)]
     pub fn extract_upper(v: __m128d) -> f64 {
         // Safety: Only compiled when the target supports SSE2 instructions.
         unsafe { _mm_cvtsd_f64(_mm_shuffle_pd(v, v, 0b0000_00001)) }
     }
 
-    #[inline(always)]
     pub fn mul_pd(a: __m128d, b: __m128d) -> __m128d {
         // Safety: Only compiled when the target supports SSE2 instructions.
         unsafe { _mm_mul_pd(a, b) }
     }
 
-    #[inline(always)]
     pub fn div_pd(a: __m128d, b: __m128d) -> __m128d {
         // Safety: Only compiled when the target supports SSE2 instructions.
         unsafe { _mm_div_pd(a, b) }
     }
 
-    #[inline(always)]
     pub fn add_pd(a: __m128d, b: __m128d) -> __m128d {
         // Safety: Only compiled when the target supports SSE2 instructions.
         unsafe { _mm_add_pd(a, b) }
     }
 
-    #[inline(always)]
     pub fn sub_pd(a: __m128d, b: __m128d) -> __m128d {
         // Safety: Only compiled when the target supports SSE2 instructions.
         unsafe { _mm_sub_pd(a, b) }
     }
 
-    #[inline(always)]
     pub fn set_pd(a: f64, b: f64) -> __m128d {
         // Safety: Only compiled when the target supports SSE2 instructions.
         unsafe { _mm_set_pd(a, b) }
     }
 
-    #[inline(always)]
     pub fn set1_pd(a: f64) -> __m128d {
         // Safety: Only compiled when the target supports SSE2 instructions.
         unsafe { _mm_set1_pd(a) }
@@ -76,7 +68,6 @@ fn numDigits(mut n: usize) -> usize {
     len
 }
 
-#[inline(always)]
 fn vec_nle(v: &[__m128d; 4], f: f64) -> bool {
     // https://github.com/searchivarius/BlogCode/blob/master/2014/5/14/mm_extract_pd.cpp
     // is "more correct" and sometimes faster than the original C programs
@@ -99,7 +90,6 @@ fn vec_nle(v: &[__m128d; 4], f: f64) -> bool {
         && mm::extract_upper(v[3]) > f
 }
 
-#[inline(always)]
 fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u64) {
     if !(mm::extract_lower(v[0]) <= f) {
         *pix8 &= 0b0111_1111; // 0x7f
@@ -127,7 +117,6 @@ fn clrPixels_nle(v: &[__m128d; 4], f: f64, pix8: &mut u64) {
     }
 }
 
-#[inline(always)]
 #[cfg(target_feature = "sse2")]
 fn calcSum(
     r: &mut [__m128d; 4],
@@ -151,7 +140,6 @@ fn calcSum(
     }
 }
 
-#[inline(always)]
 #[cfg(target_feature = "sse2")]
 fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u64 {
     let mut r = *init_r;
@@ -178,7 +166,6 @@ fn mand8(init_r: &[__m128d; 4], init_i: __m128d) -> u64 {
     return pix8;
 }
 
-#[inline(always)]
 fn calc_init_r_pair(x: f64, wid_ht: f64) -> __m128d {
     mm::sub_pd(
         mm::mul_pd(
@@ -192,7 +179,6 @@ fn calc_init_r_pair(x: f64, wid_ht: f64) -> __m128d {
     )
 }
 
-#[inline(always)]
 fn calc_init_r_chunk(x: f64, wid_ht: f64) -> [__m128d; 4] {
     [
         calc_init_r_pair(x as f64, wid_ht as f64),
