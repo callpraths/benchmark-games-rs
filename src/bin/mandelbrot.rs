@@ -214,3 +214,203 @@ fn main() {
     );
     std::io::stdout().write_all(pixels.as_slice()).unwrap();
 }
+
+mod parellel {
+    use rayon::iter::plumbing::{bridge, Consumer, ProducerCallback, UnindexedConsumer};
+    use rayon::prelude::*;
+    use std::arch::x86_64::__m128d;
+
+    struct GridIter<'iter> {
+        i0: &'iter Vec<__m128d>,
+        r0: &'iter Vec<[__m128d; 4]>,
+    }
+
+    impl<'iter> ParallelIterator for GridIter<'iter> {
+        type Item = (__m128d, &'iter [__m128d; 4]);
+        fn drive_unindexed<C>(self, consumer: C) -> C::Result
+        where
+            C: UnindexedConsumer<Self::Item>,
+        {
+            bridge(self, consumer)
+        }
+
+        fn opt_len(&self) -> Option<usize> {
+            Some(self.i0.len() * self.r0.len())
+        }
+    }
+
+    impl<'iter> IndexedParallelIterator for GridIter<'iter> {
+        fn drive<C>(self, consumer: C) -> C::Result
+        where
+            C: Consumer<Self::Item>,
+        {
+            bridge(self, consumer)
+        }
+
+        fn len(&self) -> usize {
+            self.i0.len() * self.r0.len()
+        }
+
+        fn with_producer<CB>(self, callback: CB) -> CB::Output
+        where
+            CB: ProducerCallback<Self::Item>,
+        {
+            callback.callback(GridProducer {
+                i0: self.i0,
+                r0: self.r0,
+                left: 0,
+                right: self.len(),
+            })
+        }
+    }
+
+    struct GridProducer<'producer> {
+        i0: &'producer Vec<__m128d>,
+        r0: &'producer Vec<[__m128d; 4]>,
+        left: usize,
+        right: usize,
+    }
+
+    impl<'producer> rayon::iter::plumbing::Producer for GridProducer<'producer> {
+        fn split_at(self, index: usize) -> (Self, Self) {
+            (
+                GridProducer {
+                    i0: self.i0,
+                    r0: self.r0,
+                    left: self.left,
+                    right: index,
+                },
+                GridProducer {
+                    i0: self.i0,
+                    r0: self.r0,
+                    left: index,
+                    right: self.right,
+                },
+            )
+        }
+
+        type Item = (__m128d, &'producer [__m128d; 4]);
+        type IntoIter = GridPartIter<'producer>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            // This probably incurs a bunch of bounds checks that are worth
+            // skipping (?) with unsafe code.
+            let len = self.right - self.left;
+            let row_len = self.r0.len();
+            // Consider modifying self.left directly instead of the local var.
+            let mut left = self.left;
+            // Consider modifying self.right directly instead of the local var.
+            let mut remaining = len;
+            let head = RowPartIter {
+                i: self.i0.get(left / row_len).unwrap(),
+                rs: self.r0[left % row_len..std::cmp::min(row_len - left % row_len, remaining)]
+                    .iter(),
+            };
+            remaining -= head.rs.len();
+            left += head.rs.len();
+
+            // We expect rest to be empty most of the time.
+            // When it _is_ populated, we expect the length to be 1.
+            let mut rest = vec![];
+            while remaining > 0 {
+                let next = RowPartIter {
+                    i: self.i0.get(left / row_len).unwrap(),
+                    rs: self.r0[left % row_len..std::cmp::min(row_len - left % row_len, remaining)]
+                        .iter(),
+                };
+                remaining -= head.rs.len();
+                left += head.rs.len();
+                rest.push(next);
+            }
+
+            GridPartIter {
+                head,
+                rest: rest.into_iter(),
+                tail: None,
+                len,
+            }
+        }
+    }
+
+    struct GridPartIter<'iter> {
+        head: RowPartIter<'iter>,
+        rest: std::vec::IntoIter<RowPartIter<'iter>>,
+        tail: Option<RowPartIter<'iter>>,
+        len: usize,
+    }
+
+    impl<'iter> Iterator for GridPartIter<'iter> {
+        type Item = (__m128d, &'iter [__m128d; 4]);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if let Some(e) = self.head.next() {
+                return Some(e);
+            }
+            if let Some(head) = self.rest.next() {
+                self.head = head;
+                return self.next();
+            }
+            let mut tail = None;
+            std::mem::swap(&mut self.tail, &mut tail);
+            if let Some(head) = tail {
+                self.head = head;
+                return self.next();
+            }
+            return None;
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            (self.len, Some(self.len))
+        }
+    }
+
+    impl<'iter> ExactSizeIterator for GridPartIter<'iter> {
+        fn len(&self) -> usize {
+            self.len
+        }
+    }
+
+    impl<'iter> DoubleEndedIterator for GridPartIter<'iter> {
+        fn next_back(&mut self) -> Option<Self::Item> {
+            if let Some(tail) = &mut self.tail {
+                if let Some(e) = tail.next_back() {
+                    return Some(e);
+                }
+            }
+            if let Some(tail) = self.rest.next_back() {
+                self.tail = Some(tail);
+                return self.next_back();
+            }
+            self.head.next_back()
+        }
+    }
+
+    struct RowPartIter<'iter> {
+        i: &'iter __m128d,
+        rs: std::slice::Iter<'iter, [__m128d; 4]>,
+    }
+
+    impl<'iter> Iterator for RowPartIter<'iter> {
+        type Item = (__m128d, &'iter [__m128d; 4]);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.rs.next().map(|r| (*self.i, r))
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            self.rs.size_hint()
+        }
+    }
+
+    impl<'iter> ExactSizeIterator for RowPartIter<'iter> {
+        fn len(&self) -> usize {
+            self.rs.len()
+        }
+    }
+
+    impl<'iter> DoubleEndedIterator for RowPartIter<'iter> {
+        fn next_back(&mut self) -> Option<Self::Item> {
+            self.rs.next_back().map(|r| (*self.i, r))
+        }
+    }
+}
