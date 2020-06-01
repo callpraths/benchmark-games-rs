@@ -191,9 +191,10 @@ fn main() {
     let mut pixels: Vec<u8> = Vec::with_capacity(wid_ht * (wid_ht >> 3));
 
     let i0 = {
-        let mut i0: Vec<f64> = Vec::with_capacity(wid_ht);
+        let mut i0: Vec<__m128d> = Vec::with_capacity(wid_ht);
         for y in 0..wid_ht {
-            i0.push((2.0 / wid_ht as f64) * y as f64 - 1.0)
+            let v = (2.0 / wid_ht as f64) * y as f64 - 1.0;
+            i0.push(mm::set_pd(v, v));
         }
         i0
     };
@@ -209,9 +210,7 @@ fn main() {
 
     // TODO: Parallelize. From the original program:
     // #pragma omp parallel for schedule(guided)
-    pixels.extend(
-        iproduct!(i0.iter().map(|i| mm::set_pd(*i, *i)), r0.iter()).map(|(i, r)| mand8(&*r, i)),
-    );
+    pixels.extend(iproduct!(i0.iter(), r0.iter()).map(|(i, r)| mand8(&*r, *i)));
     std::io::stdout().write_all(pixels.as_slice()).unwrap();
 }
 
