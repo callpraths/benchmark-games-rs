@@ -9,18 +9,7 @@ TMPDIR = /tmp
 mandelbrot: mandelbrot-diff mandelbrot-bench
 
 # Do not mark .PHONY because we want this to run each time
-mandelbrot-diff: mandelbrot-diff-use8 mandelbrot-diff-use64
-
-# Do not mark .PHONY because we want this to run each time
-mandelbrot-diff-use64: $(CARGO_OUT)/mandelbrot $(ORIGINALS_OUT)/mandelbrot.gcc-run
-	@echo "Checking mandelbrot outputs for 640..."
-	@$(ORIGINALS_OUT)/mandelbrot.gcc-run 640 > $(TMPDIR)/mandelbrot.gcc-run.bmp
-	@$(CARGO_OUT)/mandelbrot 640 > $(TMPDIR)/mandelbrot.rs.bmp
-	@cmp --silent $(TMPDIR)/mandelbrot.gcc-run.bmp $(TMPDIR)/mandelbrot.rs.bmp \
-		|| { echo "Mandelbrot plots differ!"; exit 1; }
-
-# Do not mark .PHONY because we want this to run each time
-mandelbrot-diff-use8: $(CARGO_OUT)/mandelbrot $(ORIGINALS_OUT)/mandelbrot.gcc-run
+mandelbrot-diff: $(CARGO_OUT)/mandelbrot $(ORIGINALS_OUT)/mandelbrot.gcc-run
 	@echo "Checking mandelbrot outputs for 200..."
 	@$(ORIGINALS_OUT)/mandelbrot.gcc-run 200 > $(TMPDIR)/mandelbrot.gcc-run.bmp
 	@$(CARGO_OUT)/mandelbrot 200 > $(TMPDIR)/mandelbrot.rs.bmp
@@ -30,9 +19,13 @@ mandelbrot-diff-use8: $(CARGO_OUT)/mandelbrot $(ORIGINALS_OUT)/mandelbrot.gcc-ru
 # Do not mark .PHONY because we want this to run each time
 mandelbrot-bench: $(CARGO_OUT)/mandelbrot $(ORIGINALS_OUT)/mandelbrot.gcc-run
 	@echo "Running mandelbrot benchmarks..."
-	hyperfine \
-		'$(ORIGINALS_OUT)/mandelbrot.gcc-run 16000' \
-		'$(CARGO_OUT)/mandelbrot 16000'
+	PARALLELIZE=true hyperfine \
+		'$(CARGO_OUT)/mandelbrot 16000' \
+		'$(ORIGINALS_OUT)/mandelbrot.gcc-run 16000'
+
+mandelbrot-par: $(CARGO_OUT)/mandelbrot
+	PARALLELIZE=true RAYON_NUM_THREADS=2 RUST_BACKTRACE=1 \
+		$(CARGO_OUT)/mandelbrot 16000
 
 # Do not mark .PHONY because we want this to run each time
 mandelbrot-seq-bench: $(CARGO_OUT)/mandelbrot \
@@ -41,13 +34,6 @@ mandelbrot-seq-bench: $(CARGO_OUT)/mandelbrot \
 	hyperfine \
 		'$(CARGO_OUT)/mandelbrot 16000' \
 		'$(ORIGINALS_OUT)/mandelbrot.gcc-seq-run 16000'
-
-
-# Do not mark .PHONY because we want this to run each time
-mandelbrot-only-bench: $(CARGO_OUT)/mandelbrot mandelbrot-diff
-	@echo "Running mandelbrot rust impl benchmark..."
-	hyperfine \
-		'$(CARGO_OUT)/mandelbrot 16000'
 
 $(CARGO_OUT)/mandelbrot: $(CARGO_SRC)/mandelbrot.rs
 	cargo build --bin mandelbrot --release

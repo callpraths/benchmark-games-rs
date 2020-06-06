@@ -10,6 +10,7 @@
 #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
 
 use itertools::iproduct;
+use rayon::prelude::*;
 use std::arch::x86_64::__m128d;
 use std::io::Write;
 
@@ -208,18 +209,26 @@ fn main() {
         r0
     };
 
-    // TODO: Parallelize. From the original program:
-    // #pragma omp parallel for schedule(guided)
-    pixels.extend(iproduct!(i0.iter(), r0.iter()).map(|(i, r)| mand8(&*r, *i)));
+    if std::env::var("PARALLELIZE").is_ok() {
+        parallel::new(&i0, &r0)
+            .map(|(i, r)| mand8(r, i))
+            .collect_into_vec(&mut pixels);
+    } else {
+        pixels.extend(iproduct!(i0.iter(), r0.iter()).map(|(i, r)| mand8(&*r, *i)));
+    }
     std::io::stdout().write_all(pixels.as_slice()).unwrap();
 }
 
-mod parellel {
+mod parallel {
     use rayon::iter::plumbing::{bridge, Consumer, ProducerCallback, UnindexedConsumer};
     use rayon::prelude::*;
     use std::arch::x86_64::__m128d;
 
-    struct GridIter<'iter> {
+    pub fn new<'iter>(i0: &'iter Vec<__m128d>, r0: &'iter Vec<[__m128d; 4]>) -> GridIter<'iter> {
+        GridIter { i0, r0 }
+    }
+
+    pub struct GridIter<'iter> {
         i0: &'iter Vec<__m128d>,
         r0: &'iter Vec<[__m128d; 4]>,
     }
