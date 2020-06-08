@@ -23,6 +23,13 @@ mandelbrot-bench: $(CARGO_OUT)/mandelbrot $(ORIGINALS_OUT)/mandelbrot.gcc-run
 		'$(CARGO_OUT)/mandelbrot 16000' \
 		'$(ORIGINALS_OUT)/mandelbrot.gcc-run 16000'
 
+# Do not mark .PHONY because we want this to run each time
+mandelbrot-bench-large: $(CARGO_OUT)/mandelbrot $(ORIGINALS_OUT)/mandelbrot.gcc-run
+	@echo "Running mandelbrot benchmarks..."
+	PARALLELIZE=true hyperfine \
+		'$(CARGO_OUT)/mandelbrot 64000' \
+		'$(ORIGINALS_OUT)/mandelbrot.gcc-run 64000'
+
 mandelbrot-par: $(CARGO_OUT)/mandelbrot
 	PARALLELIZE=true RAYON_NUM_THREADS=2 RUST_BACKTRACE=1 \
 		$(CARGO_OUT)/mandelbrot 16000 >/dev/null
