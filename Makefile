@@ -25,7 +25,7 @@ mandelbrot-bench: $(CARGO_OUT)/mandelbrot $(ORIGINALS_OUT)/mandelbrot.gcc-run
 
 mandelbrot-par: $(CARGO_OUT)/mandelbrot
 	PARALLELIZE=true RAYON_NUM_THREADS=2 RUST_BACKTRACE=1 \
-		$(CARGO_OUT)/mandelbrot 16000
+		$(CARGO_OUT)/mandelbrot 16000 >/dev/null
 
 # Do not mark .PHONY because we want this to run each time
 mandelbrot-seq-bench: $(CARGO_OUT)/mandelbrot \
